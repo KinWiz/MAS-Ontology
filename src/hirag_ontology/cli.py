@@ -7,7 +7,8 @@ import logging
 from collections.abc import Sequence
 
 from hirag_ontology import __version__
-from hirag_ontology.config import load_gemma_settings
+from hirag_ontology.app.web_demo import run_server
+from hirag_ontology.config import load_gemma_settings, load_neo4j_settings
 from hirag_ontology.llm import GemmaOllamaClient
 from hirag_ontology.pipeline.knowledge_graph import KnowledgeGraph
 from hirag_ontology.pipeline.runner import demo_embedding_provider, run_demo_pipeline
@@ -16,6 +17,7 @@ from hirag_ontology.retrieval.answering import (
     build_graph_context,
 )
 from hirag_ontology.retrieval.retriever import HybridRetriever, RetrievalMode
+from hirag_ontology.storage import JsonGraphStore, Neo4jGraphStore
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -91,6 +93,72 @@ def build_parser() -> argparse.ArgumentParser:
         help="Print the graph context used for answering.",
     )
 
+    graph_stats = subparsers.add_parser(
+        "graph-stats",
+        help="Print statistics for a saved JSON knowledge graph.",
+    )
+    graph_stats.add_argument(
+        "--graph",
+        default="results/knowledge_graph_full_gemma.json",
+        help="Path to a saved knowledge graph JSON.",
+    )
+
+    export_neo4j = subparsers.add_parser(
+        "export-neo4j",
+        help="Export a saved JSON knowledge graph into Neo4j.",
+    )
+    export_neo4j.add_argument(
+        "--graph",
+        default="results/knowledge_graph_full_gemma.json",
+        help="Path to a saved knowledge graph JSON.",
+    )
+    export_neo4j.add_argument(
+        "--uri",
+        default=None,
+        help="Neo4j URI. Defaults to NEO4J_URI or bolt://localhost:7687.",
+    )
+    export_neo4j.add_argument(
+        "--user",
+        default=None,
+        help="Neo4j user. Defaults to NEO4J_USER or neo4j.",
+    )
+    export_neo4j.add_argument(
+        "--password",
+        default=None,
+        help="Neo4j password. Defaults to NEO4J_PASSWORD.",
+    )
+    export_neo4j.add_argument(
+        "--database",
+        default=None,
+        help="Neo4j database. Defaults to NEO4J_DATABASE or neo4j.",
+    )
+    export_neo4j.add_argument(
+        "--clear",
+        action="store_true",
+        help="Delete existing Neo4j graph data before import.",
+    )
+
+    web = subparsers.add_parser(
+        "web",
+        help="Start the local Web UI.",
+    )
+    web.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="Host interface for the Web UI server.",
+    )
+    web.add_argument(
+        "--port",
+        type=int,
+        default=8765,
+        help="Port for the Web UI server.",
+    )
+    web.add_argument(
+        "--graph",
+        default="results/knowledge_graph_full_gemma.json",
+        help="Default graph JSON opened by the Web UI.",
+    )
+
     return parser
 
 
@@ -154,6 +222,62 @@ def run_ask(args: argparse.Namespace) -> int:
     return 0
 
 
+def run_graph_stats(args: argparse.Namespace) -> int:
+    """Print statistics for a JSON graph."""
+    try:
+        stats = JsonGraphStore(args.graph).stats()
+    except (FileNotFoundError, RuntimeError, ValueError) as error:
+        print(f"error: {error}")
+        return 2
+
+    print(f"Graph: {stats.entity_count} entities, {stats.relation_count} relations")
+    return 0
+
+
+def run_export_neo4j(args: argparse.Namespace) -> int:
+    """Export a JSON graph into an optional Neo4j backend."""
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s:%(message)s")
+    try:
+        kg = KnowledgeGraph.load(args.graph)
+        settings = load_neo4j_settings()
+        uri = args.uri or settings.uri
+        user = args.user or settings.user
+        password = args.password if args.password is not None else settings.password
+        database = args.database if args.database is not None else settings.database
+        if not password:
+            print("error: Neo4j password is required via --password or NEO4J_PASSWORD")
+            return 2
+
+        store = Neo4jGraphStore(
+            uri=uri,
+            user=user,
+            password=password,
+            database=database,
+        )
+        try:
+            store.write_graph(kg, clear=args.clear)
+            stats = store.stats()
+        finally:
+            store.close()
+    except (FileNotFoundError, RuntimeError, ValueError) as error:
+        print(f"error: {error}")
+        return 2
+
+    print(
+        "Neo4j export complete: "
+        f"{stats.entity_count} entities, {stats.relation_count} relations"
+    )
+    print(f"Neo4j target: {uri} database={database or '<default>'} user={user}")
+    return 0
+
+
+def run_web(args: argparse.Namespace) -> int:
+    """Start the local Web UI server."""
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s:%(message)s")
+    run_server(host=args.host, port=args.port, graph_path=args.graph)
+    return 0
+
+
 def _build_gemma_answer_client() -> GemmaOllamaClient:
     settings = load_gemma_settings()
     return GemmaOllamaClient(
@@ -175,6 +299,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         return run_demo(args)
     if args.command == "ask":
         return run_ask(args)
+    if args.command == "graph-stats":
+        return run_graph_stats(args)
+    if args.command == "export-neo4j":
+        return run_export_neo4j(args)
+    if args.command == "web":
+        return run_web(args)
 
     parser.print_help()
     return 0

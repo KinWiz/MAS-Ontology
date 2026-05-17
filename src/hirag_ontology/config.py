@@ -30,6 +30,25 @@ class GemmaSettings:
         )
 
 
+@dataclass(frozen=True)
+class Neo4jSettings:
+    """Optional Neo4j runtime settings."""
+
+    uri: str
+    user: str
+    password: str
+    database: str | None
+
+    def __repr__(self) -> str:
+        return (
+            "Neo4jSettings("
+            f"uri={self.uri!r}, "
+            f"user={self.user!r}, "
+            f"password={'<set>' if self.password else '<empty>'}, "
+            f"database={self.database!r})"
+        )
+
+
 def load_dotenv(path: str | Path = ".env", *, override: bool = False) -> None:
     """Load simple KEY=VALUE pairs from a .env file into os.environ."""
     env_path = Path(path)
@@ -67,6 +86,18 @@ def load_gemma_settings(env_path: str | Path = ".env") -> GemmaSettings:
             "GEMMA_REQUEST_TIMEOUT_SECONDS",
             default=600.0,
         ),
+    )
+
+
+def load_neo4j_settings(env_path: str | Path = ".env") -> Neo4jSettings:
+    """Load optional Neo4j settings from .env and the current environment."""
+    load_dotenv(env_path)
+    database = os.getenv("NEO4J_DATABASE", "neo4j").strip()
+    return Neo4jSettings(
+        uri=os.getenv("NEO4J_URI", "bolt://localhost:7687").strip(),
+        user=os.getenv("NEO4J_USER", "neo4j").strip(),
+        password=os.getenv("NEO4J_PASSWORD", "").strip(),
+        database=database or None,
     )
 
 

@@ -2,6 +2,8 @@ import hirag_ontology.cli as cli
 from hirag_ontology import __version__
 from hirag_ontology.cli import build_parser, main
 from hirag_ontology.llm import FakeLLMClient
+from hirag_ontology.pipeline.knowledge_graph import Entity, KnowledgeGraph
+from hirag_ontology.storage import GraphStats
 from test_pipeline_demo import _patch_demo_clients
 
 
@@ -44,6 +46,99 @@ def test_parser_exposes_ask_defaults() -> None:
     assert args.top_k == 5
     assert args.retrieval_mode == "hybrid_rrf"
     assert args.show_context is False
+
+
+def test_parser_exposes_neo4j_export_defaults() -> None:
+    parser = build_parser()
+
+    args = parser.parse_args(["export-neo4j"])
+
+    assert args.command == "export-neo4j"
+    assert args.graph == "results/knowledge_graph_full_gemma.json"
+    assert args.uri is None
+    assert args.user is None
+    assert args.password is None
+    assert args.database is None
+    assert args.clear is False
+
+
+def test_parser_exposes_web_defaults() -> None:
+    parser = build_parser()
+
+    args = parser.parse_args(["web"])
+
+    assert args.command == "web"
+    assert args.host == "127.0.0.1"
+    assert args.port == 8765
+    assert args.graph == "results/knowledge_graph_full_gemma.json"
+
+
+def test_graph_stats_command_prints_json_graph_stats(tmp_path, capsys) -> None:
+    graph_path = tmp_path / "graph.json"
+    kg = KnowledgeGraph()
+    kg.add_relation("imatinib", "treats", "Ph-positive ALL")
+    kg.save(graph_path)
+
+    exit_code = main(["graph-stats", "--graph", str(graph_path)])
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert "2 entities, 1 relations" in captured.out
+
+
+def test_export_neo4j_uses_optional_store_without_logging_password(
+    tmp_path,
+    capsys,
+    monkeypatch,
+) -> None:
+    graph_path = tmp_path / "graph.json"
+    kg = KnowledgeGraph()
+    kg.add_entity(Entity(label="imatinib", entity_type="Drug"))
+    kg.save(graph_path)
+    instances = []
+
+    class FakeNeo4jStore:
+        def __init__(self, **kwargs) -> None:  # noqa: ANN001
+            self.kwargs = kwargs
+            self.clear = None
+            instances.append(self)
+
+        def write_graph(self, graph, *, clear: bool = False) -> None:  # noqa: ANN001
+            self.graph = graph
+            self.clear = clear
+
+        def stats(self) -> GraphStats:
+            return GraphStats(entity_count=1, relation_count=0)
+
+        def close(self) -> None:
+            self.closed = True
+
+    monkeypatch.setattr(cli, "Neo4jGraphStore", FakeNeo4jStore)
+
+    exit_code = main(
+        [
+            "export-neo4j",
+            "--graph",
+            str(graph_path),
+            "--uri",
+            "bolt://example:7687",
+            "--user",
+            "neo4j",
+            "--password",
+            "secret",
+            "--database",
+            "neo4j",
+            "--clear",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert instances[0].kwargs["uri"] == "bolt://example:7687"
+    assert instances[0].clear is True
+    assert instances[0].closed is True
+    assert "1 entities, 0 relations" in captured.out
+    assert "secret" not in captured.out
 
 
 def test_run_demo_outputs_summary(tmp_path, capsys, monkeypatch) -> None:

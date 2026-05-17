@@ -11,6 +11,11 @@ dependencies = [
   "networkx>=3.2",
 ]
 
+[project.optional-dependencies]
+neo4j = [
+  "neo4j>=5.26",
+]
+
 [project.scripts]
 hirag-ontology = "hirag_ontology.cli:main"
 
@@ -29,9 +34,12 @@ build-backend = "hatchling.build"
 packages = ["src/hirag_ontology"]
 
 [tool.pytest.ini_options]
-addopts = "-q -p no:cacheprovider --basetemp=tmp_pytest"
+addopts = "-q -p no:cacheprovider --basetemp=.pytest_tmp"
 testpaths = ["tests"]
 pythonpath = ["src"]
+markers = [
+  "neo4j: tests that require a live Neo4j service",
+]
 
 [tool.ruff]
 line-length = 88

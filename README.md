@@ -23,9 +23,9 @@ The planned MVP follows a small, testable architecture:
 9. The CLI runs graph building and question answering with local Gemma 4.
 10. Tests use internal test doubles for deterministic coverage.
 
-For the MVP, graph storage should prefer NetworkX plus JSON persistence. Neo4j,
-real LLM providers, web serving, and full-corpus evaluation can be added later as
-optional runtime features.
+For the MVP, graph storage uses NetworkX plus JSON persistence by default. Neo4j
+is available as an optional export/query backend; it is not required for tests or
+basic question answering.
 
 ## Current Layout
 
@@ -37,6 +37,7 @@ src/hirag_ontology/
   ontology.py
   pipeline/
   retrieval/
+  storage/
   evaluation/
   app/
 tests/
@@ -52,6 +53,12 @@ Install and run commands with `uv`:
 uv run pytest -q
 uv run ruff check .
 uv run mypy
+```
+
+or run the same checks through Make:
+
+```bash
+make verify
 ```
 
 Run the pipeline with local Gemma 4:
@@ -98,6 +105,86 @@ uv run python -m hirag_ontology.cli ask \
   --retrieval-mode lexical_only \
   --show-context
 ```
+
+Print graph statistics with:
+
+```bash
+uv run python -m hirag_ontology.cli graph-stats \
+  --graph results/knowledge_graph_full_gemma.json
+```
+
+## Optional Neo4j Export
+
+Neo4j is optional. The JSON graph remains the portable source artifact. Install
+the Neo4j extra only when you want to export/query the graph in Neo4j:
+
+```bash
+uv sync --extra neo4j
+```
+
+Configure Neo4j through `.env` or environment variables:
+
+```text
+NEO4J_URI=bolt://localhost:7687
+NEO4J_USER=neo4j
+NEO4J_PASSWORD=
+NEO4J_DATABASE=neo4j
+```
+
+Export the prebuilt graph:
+
+```bash
+uv run python -m hirag_ontology.cli export-neo4j \
+  --graph results/knowledge_graph_full_gemma.json \
+  --clear
+```
+
+The export command never logs the Neo4j password. Unit tests use a fake driver;
+live Neo4j tests should be marked with `pytest.mark.neo4j`.
+
+## Web UI
+
+Start the local Web UI:
+
+```bash
+uv --cache-dir .uv-cache run python -m hirag_ontology.cli web
+```
+
+Then open:
+
+```text
+http://127.0.0.1:8765
+```
+
+The UI includes:
+
+- dashboard metrics: entity count, relation count, type distribution, PageRank,
+  degree, and ontology validation status;
+- question answering with retrieval mode, `top_k`, answer text, retrieved
+  entities, graph context, and retrieved subgraph rendering;
+- graph explorer with entity search, type/predicate filters, depth 1-3, node
+  limits, clickable nodes, and an entity panel;
+- pipeline upload for Markdown files, A1-A6 stage status, saved graph output,
+  and optional import of the result to Neo4j.
+
+By default, the UI opens:
+
+```text
+results/knowledge_graph_full_gemma.json
+```
+
+To choose another graph at startup:
+
+```bash
+uv --cache-dir .uv-cache run python -m hirag_ontology.cli web \
+  --graph results/demo_graph.json \
+  --host 127.0.0.1 \
+  --port 8765
+```
+
+Ask mode can use local Gemma or deterministic graph-only answers. Pipeline runs
+use local Gemma through Ollama and may take a long time on large document sets.
+Neo4j import requires `NEO4J_PASSWORD` in `.env` and the optional Neo4j package.
 
 ## Local Gemma 4 Runtime
 

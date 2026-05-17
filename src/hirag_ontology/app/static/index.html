@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>HiRAG-Ontology Web UI</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <h1>HiRAG-Ontology</h1>
+          <p id="graphPathLabel">results/knowledge_graph_full_gemma.json</p>
+        </div>
+        <form id="graphForm" class="graph-form">
+          <input
+            id="graphPathInput"
+            name="graph"
+            type="text"
+            value="results/knowledge_graph_full_gemma.json"
+            aria-label="Graph path"
+          />
+          <button type="submit">Reload</button>
+        </form>
+      </header>
+
+      <main class="workspace">
+        <section class="surface dashboard-surface">
+          <div class="section-title">
+            <h2>Dashboard</h2>
+            <span id="validationBadge" class="badge">Loading</span>
+          </div>
+          <div class="metrics">
+            <div class="metric">
+              <span>Entities</span>
+              <strong id="entityCount">0</strong>
+            </div>
+            <div class="metric">
+              <span>Relations</span>
+              <strong id="relationCount">0</strong>
+            </div>
+            <div class="metric">
+              <span>Consistency</span>
+              <strong id="consistencyScore">0.00</strong>
+            </div>
+          </div>
+          <div class="dashboard-grid">
+            <div>
+              <h3>Type Distribution</h3>
+              <div id="typeDistribution" class="bar-list"></div>
+            </div>
+            <div>
+              <h3>Top by Degree</h3>
+              <ol id="topDegree" class="rank-list"></ol>
+            </div>
+            <div>
+              <h3>Top by PageRank</h3>
+              <ol id="topPagerank" class="rank-list"></ol>
+            </div>
+          </div>
+        </section>
+
+        <section class="surface ask-surface">
+          <div class="section-title">
+            <h2>Ask / Query</h2>
+            <span id="askStatus" class="muted">Idle</span>
+          </div>
+          <form id="askForm" class="ask-form">
+            <textarea
+              id="questionInput"
+              rows="4"
+              placeholder="Какой протокол лечения острого лимфобластного лейкоза у детей и чем отличается лечение Ph+ ALL?"
+              required
+            ></textarea>
+            <div class="control-row">
+              <label>
+                Retrieval
+                <select id="retrievalMode"></select>
+              </label>
+              <label>
+                top_k
+                <input id="topK" type="number" min="1" max="20" value="5" />
+              </label>
+              <label>
+                Answer
+                <select id="llmMode">
+                  <option value="gemma">Gemma</option>
+                  <option value="deterministic">Deterministic</option>
+                </select>
+              </label>
+              <button type="submit">Ask</button>
+            </div>
+          </form>
+          <div class="answer-layout">
+            <div>
+              <h3>Answer</h3>
+              <pre id="answerBox" class="text-output"></pre>
+            </div>
+            <div>
+              <div class="section-title compact">
+                <h3>Retrieved Entities</h3>
+                <button id="showRetrievedSubgraph" type="button" disabled>
+                  Show Retrieved Subgraph
+                </button>
+              </div>
+              <div id="retrievedEntities" class="entity-list"></div>
+            </div>
+          </div>
+          <details class="context-block" open>
+            <summary>Graph Context</summary>
+            <pre id="graphContext" class="text-output"></pre>
+          </details>
+        </section>
+
+        <section class="surface explorer-surface">
+          <div class="section-title">
+            <h2>Graph Explorer</h2>
+            <span id="graphStatus" class="muted">No entity selected</span>
+          </div>
+          <div class="explorer-grid">
+            <aside class="entity-search">
+              <input
+                id="entitySearchInput"
+                type="search"
+                placeholder="Search entity"
+                aria-label="Search entity"
+              />
+              <label>
+                Entity type
+                <select id="entityTypeFilter">
+                  <option value="">All</option>
+                </select>
+              </label>
+              <label>
+                Predicate
+                <select id="predicateFilter">
+                  <option value="">All</option>
+                </select>
+              </label>
+              <label>
+                Depth
+                <select id="depthInput">
+                  <option value="1">1</option>
+                  <option value="2">2</option>
+                  <option value="3">3</option>
+                </select>
+              </label>
+              <label>
+                Limit nodes
+                <input id="limitNodesInput" type="number" min="10" max="200" value="60" />
+              </label>
+              <div id="entitySearchResults" class="entity-list"></div>
+            </aside>
+            <div class="graph-zone">
+              <svg id="graphSvg" role="img" aria-label="Knowledge graph"></svg>
+            </div>
+            <aside id="entityPanel" class="entity-panel">
+              <h3>EntityPanel</h3>
+              <div id="entityPanelContent" class="panel-content muted">
+                Select a node
+              </div>
+            </aside>
+          </div>
+        </section>
+
+        <section class="surface pipeline-surface">
+          <div class="section-title">
+            <h2>Pipeline</h2>
+            <span id="pipelineStatus" class="muted">Idle</span>
+          </div>
+          <form id="pipelineForm" class="pipeline-form">
+            <input id="documentInput" type="file" accept=".md,text/markdown" multiple />
+            <input
+              id="pipelineOutPath"
+              type="text"
+              value="results/web_pipeline_graph.json"
+              aria-label="Pipeline output path"
+            />
+            <button type="submit">Run Pipeline</button>
+          </form>
+          <div id="stageList" class="stage-list"></div>
+          <div class="neo4j-row">
+            <label>
+              <input id="clearNeo4j" type="checkbox" checked />
+              Clear Neo4j before import
+            </label>
+            <button id="exportNeo4jButton" type="button">Import Result to Neo4j</button>
+            <span id="neo4jStatus" class="muted"></span>
+          </div>
+        </section>
+      </main>
+    </div>
+    <script src="/static/app.js"></script>
+  </body>
+</html>
