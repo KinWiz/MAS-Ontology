@@ -1,0 +1,15 @@
+.cache/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.uv-cache/
+.venv/
+.env
+__pycache__/
+*.py[cod]
+tmp/
+tmp_pytest/
+src/results/
+results/*
+!results/.gitkeep
+!results/knowledge_graph_full_gemma.json

@@ -1,0 +1,75 @@
+{
+  "classes": {
+    "Drug": {
+      "description": "Medication, active substance, chemotherapy drug, targeted therapy, or pharmacological agent."
+    },
+    "Condition": {
+      "description": "Disease, diagnosis, clinical condition, cancer type, subtype, complication, or syndrome."
+    },
+    "Procedure": {
+      "description": "Medical intervention, treatment phase, diagnostic procedure, surgery, monitoring action, or care protocol."
+    },
+    "Symptom": {
+      "description": "Clinical sign, symptom, toxicity, side effect, or patient-observed manifestation."
+    },
+    "AnatomicalStructure": {
+      "description": "Body part, organ, tissue, cell type, or anatomical location."
+    },
+    "DosageRegimen": {
+      "description": "Dose, frequency, duration, route, schedule, cycle, or treatment regimen."
+    },
+    "LabTest": {
+      "description": "Laboratory test, biomarker test, imaging test, cytogenetic analysis, PCR, FISH, or diagnostic measurement."
+    },
+    "Organization": {
+      "description": "Medical institution, authority, guideline publisher, clinical group, or regulator."
+    },
+    "Other": {
+      "description": "Fallback class for entities that do not fit another class."
+    }
+  },
+  "relations": {
+    "treats": {
+      "domain": "Drug",
+      "range": "Condition",
+      "description": "A drug treats a condition."
+    },
+    "causes": {
+      "domain": "Drug",
+      "range": "Symptom",
+      "description": "A drug may cause a symptom or adverse event."
+    },
+    "contraindicated_for": {
+      "domain": "Drug",
+      "range": "Condition",
+      "description": "A drug is contraindicated for a condition."
+    },
+    "part_of": {
+      "domain": "Procedure",
+      "range": "Procedure",
+      "description": "A procedure or phase is part of another procedure or protocol."
+    },
+    "diagnosed_by": {
+      "domain": "Condition",
+      "range": "LabTest",
+      "description": "A condition is diagnosed by a test or diagnostic procedure."
+    },
+    "dosage_is": {
+      "domain": "Drug",
+      "range": "DosageRegimen",
+      "description": "A drug has a dosage or regimen."
+    },
+    "related_to": {
+      "domain": "Other",
+      "range": "Other",
+      "description": "Fallback relation for weak or general associations."
+    }
+  },
+  "axioms": [
+    "valid_entity_type",
+    "valid_predicate",
+    "domain_constraint",
+    "range_constraint",
+    "no_self_loops"
+  ]
+}
