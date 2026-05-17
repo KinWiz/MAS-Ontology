@@ -1,6 +1,6 @@
 # HiRAG-Ontology Rebuild
 
-HiRAG-Ontology Rebuild is a Python research prototype for rebuilding a
+HiRAG-Ontology is a Python prototype for a
 multi-agent RAG system that constructs and queries a typed medical knowledge
 graph from Markdown documents.
 
