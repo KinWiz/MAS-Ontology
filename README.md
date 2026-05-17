@@ -1,4 +1,4 @@
-# HiRAG-Ontology Rebuild
+# HiRAG-Ontology
 
 HiRAG-Ontology is a Python prototype for a
 multi-agent RAG system that constructs and queries a typed medical knowledge
