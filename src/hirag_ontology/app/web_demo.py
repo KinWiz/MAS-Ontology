@@ -17,6 +17,8 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 from uuid import uuid4
 
+import networkx as nx
+
 from hirag_ontology.config import load_gemma_settings, load_neo4j_settings
 from hirag_ontology.llm import GemmaOllamaClient, LLMClient
 from hirag_ontology.ontology import load_ontology
@@ -56,6 +58,9 @@ class PipelineStage:
     label: str
     status: str = "pending"
     detail: str = ""
+    started_at: float | None = None
+    completed_at: float | None = None
+    duration_s: float | None = None
 
 
 @dataclass
@@ -153,6 +158,12 @@ def create_server(
                     job_id = parsed.path.rsplit("/", 1)[-1]
                     self._send_json(job_payload(job_id))
                     return
+                if parsed.path == "/api/neo4j/status":
+                    self._send_json(neo4j_status_payload())
+                    return
+                if parsed.path == "/api/evaluation/summary":
+                    self._send_json(evaluation_summary_payload())
+                    return
                 self._send_error(HTTPStatus.NOT_FOUND, "Not found")
             except Exception as error:  # pragma: no cover - server safety boundary
                 logger.exception("Web UI GET failed")
@@ -171,7 +182,10 @@ def create_server(
                             ),
                             query=str(body.get("query", "")),
                             retrieval_mode=str(
-                                body.get("retrieval_mode", RetrievalMode.HYBRID_RRF)
+                                body.get(
+                                    "retrieval_mode",
+                                    RetrievalMode.LEXICAL_STRUCTURAL,
+                                )
                             ),
                             top_k=_safe_int(body.get("top_k"), default=5),
                             llm=str(body.get("llm", "gemma")),
@@ -195,6 +209,18 @@ def create_server(
                                 body.get("limit_nodes"),
                                 default=80,
                             ),
+                        )
+                    )
+                    return
+                if parsed.path == "/api/retrieval/compare":
+                    self._send_json(
+                        retrieval_compare_payload(
+                            graph_path=resolve_project_path(
+                                body.get("graph_path"),
+                                default=state.default_graph_path,
+                            ),
+                            query=str(body.get("query", "")),
+                            top_k=_safe_int(body.get("top_k"), default=5),
                         )
                     )
                     return
@@ -307,12 +333,21 @@ def dashboard_payload(graph_path: str | Path) -> dict[str, Any]:
     type_distribution = Counter(
         entity.entity_type for entity in kg.entities.values()
     )
+    predicate_distribution = Counter(
+        relation.predicate for relation in kg.relations
+    )
 
     return {
         "graph_path": str(graph_path),
         "entity_count": len(kg.entities),
         "relation_count": len(kg.relations),
         "type_distribution": dict(sorted(type_distribution.items())),
+        "predicate_distribution": dict(sorted(predicate_distribution.items())),
+        "graph_metrics": _graph_metrics(kg),
+        "top_predicates": [
+            {"predicate": predicate, "count": count}
+            for predicate, count in predicate_distribution.most_common(10)
+        ],
         "top_by_degree": _top_entities_by_degree(kg),
         "top_by_pagerank": _top_entities_by_pagerank(kg),
         "validation": {
@@ -415,13 +450,16 @@ def ask_payload(
     kg = KnowledgeGraph.load(graph_path)
     mode = RetrievalMode(retrieval_mode)
     safe_top_k = _clamp(top_k, minimum=1, maximum=20)
+    retrieval_started = time.perf_counter()
     retrieved = HybridRetriever(
         kg,
         _web_embedding_provider(),
         mode=mode,
     ).retrieve(query, top_k=safe_top_k)
-    graph_context = build_graph_context(kg, retrieved)
+    retrieval_elapsed = time.perf_counter() - retrieval_started
+    graph_context = build_graph_context(kg, retrieved, query=query)
 
+    answer_started = time.perf_counter()
     if llm == "gemma":
         answer = answer_from_graph_context(
             _build_gemma_client(),
@@ -437,14 +475,135 @@ def ask_payload(
     else:
         msg = "llm must be gemma or deterministic."
         raise ValueError(msg)
+    answer_elapsed = time.perf_counter() - answer_started
+    context_relations = _context_relation_payloads(kg, retrieved, limit=15)
+    source_chunks = _source_chunks_from_context(retrieved, context_relations)
 
     return {
         "answer": answer,
         "graph_context": graph_context,
         "retrieved_entities": [
-            _retrieved_entity_payload(result)
+            _retrieved_entity_payload(result, kg)
             for result in retrieved
         ],
+        "context_relations": context_relations,
+        "source_chunks": source_chunks,
+        "diagnostics": {
+            "graph_path": str(graph_path),
+            "query": query,
+            "retrieval_mode": mode.value,
+            "top_k": safe_top_k,
+            "llm": llm,
+            "retrieved_count": len(retrieved),
+            "graph_context_chars": len(graph_context),
+            "retrieval_s": retrieval_elapsed,
+            "answer_s": answer_elapsed,
+            "total_s": retrieval_elapsed + answer_elapsed,
+        },
+    }
+
+
+def retrieval_compare_payload(
+    *,
+    graph_path: str | Path,
+    query: str,
+    top_k: int,
+) -> dict[str, Any]:
+    """Compare retrieval results across all available modes."""
+    if not query.strip():
+        msg = "Question is required."
+        raise ValueError(msg)
+    kg = KnowledgeGraph.load(graph_path)
+    safe_top_k = _clamp(top_k, minimum=1, maximum=20)
+    modes: dict[str, Any] = {}
+    for mode in RetrievalMode:
+        started = time.perf_counter()
+        retrieved = HybridRetriever(
+            kg,
+            _web_embedding_provider(),
+            mode=mode,
+        ).retrieve(query, top_k=safe_top_k)
+        modes[mode.value] = {
+            "duration_s": time.perf_counter() - started,
+            "items": [
+                _retrieved_entity_payload(result, kg)
+                for result in retrieved
+            ],
+        }
+    return {
+        "query": query,
+        "top_k": safe_top_k,
+        "modes": modes,
+    }
+
+
+def neo4j_status_payload() -> dict[str, Any]:
+    """Return optional Neo4j connection status without exposing secrets."""
+    settings = load_neo4j_settings()
+    target = {
+        "uri": settings.uri,
+        "user": settings.user,
+        "database": settings.database,
+        "password_set": bool(settings.password),
+    }
+    if not settings.password:
+        return {
+            "configured": False,
+            "connected": False,
+            "target": target,
+            "message": "NEO4J_PASSWORD is not configured.",
+        }
+
+    store = Neo4jGraphStore(
+        uri=settings.uri,
+        user=settings.user,
+        password=settings.password,
+        database=settings.database,
+    )
+    try:
+        stats = store.stats()
+    except Exception as error:  # pragma: no cover - depends on live Neo4j
+        return {
+            "configured": True,
+            "connected": False,
+            "target": target,
+            "message": str(error),
+        }
+    finally:
+        store.close()
+
+    return {
+        "configured": True,
+        "connected": True,
+        "target": target,
+        "message": "Connected.",
+        "entity_count": stats.entity_count,
+        "relation_count": stats.relation_count,
+    }
+
+
+def evaluation_summary_payload() -> dict[str, Any]:
+    """Load saved evaluation artifacts for the Web UI quality panel."""
+    results_dir = _project_root() / "results"
+    retrieval_metrics = _read_json_artifact(results_dir / "retrieval_metrics.json")
+    generation_metrics = _read_json_artifact(results_dir / "generation_metrics.json")
+    latency_metrics = _read_json_artifact(results_dir / "latency_results.json")
+    full_report = _read_json_artifact(results_dir / "full_evaluation_report.json")
+    return {
+        "results_dir": str(results_dir),
+        "retrieval_metrics": retrieval_metrics,
+        "generation_metrics": generation_metrics,
+        "latency_metrics": latency_metrics,
+        "full_report": full_report,
+        "has_any_metrics": any(
+            item is not None
+            for item in [
+                retrieval_metrics,
+                generation_metrics,
+                latency_metrics,
+                full_report,
+            ]
+        ),
     }
 
 
@@ -670,7 +829,7 @@ def _run_pipeline_with_progress(
         "graph_path": str(output_path),
         "summary_path": str(summary_path),
         "retrieved_entities": [
-            _retrieved_entity_payload(result)
+            _retrieved_entity_payload(result, kg)
             for result in retrieved
         ],
     }
@@ -724,6 +883,14 @@ def _set_stage(job_id: str, stage_id: str, status: str, detail: str) -> None:
         job = _jobs[job_id]
         for stage in job.stages:
             if stage.id == stage_id:
+                now = time.time()
+                if status == "running" and stage.started_at is None:
+                    stage.started_at = now
+                if status in {"completed", "failed"}:
+                    if stage.started_at is None:
+                        stage.started_at = now
+                    stage.completed_at = now
+                    stage.duration_s = now - stage.started_at
                 stage.status = status
                 stage.detail = detail
                 break
@@ -822,6 +989,41 @@ def _empty_subgraph_payload() -> dict[str, Any]:
     return {"nodes": [], "relations": [], "depth": 1, "limit_nodes": 0}
 
 
+def _graph_metrics(kg: KnowledgeGraph) -> dict[str, Any]:
+    node_count = len(kg.entities)
+    relation_count = len(kg.relations)
+    possible_relations = node_count * (node_count - 1)
+    weak_components = (
+        list(nx.weakly_connected_components(kg.graph))
+        if node_count
+        else []
+    )
+    largest_component = max(
+        (len(component) for component in weak_components),
+        default=0,
+    )
+    source_chunks = {
+        chunk
+        for entity in kg.entities.values()
+        for chunk in entity.source_chunks
+    }
+    source_chunks.update(
+        relation.source_chunk
+        for relation in kg.relations
+        if relation.source_chunk
+    )
+    alias_count = sum(len(entity.aliases) for entity in kg.entities.values())
+    return {
+        "density": relation_count / possible_relations if possible_relations else 0.0,
+        "connected_components": len(weak_components),
+        "largest_component_size": largest_component,
+        "isolated_entities": len(list(nx.isolates(kg.graph))),
+        "source_chunk_count": len(source_chunks),
+        "alias_count": alias_count,
+        "pagerank_available": bool(kg.pagerank),
+    }
+
+
 def _top_entities_by_degree(
     kg: KnowledgeGraph,
     limit: int = 10,
@@ -891,16 +1093,83 @@ def _relation_payload(
     }
 
 
-def _retrieved_entity_payload(result: Any) -> dict[str, Any]:
-    return {
+def _retrieved_entity_payload(
+    result: Any,
+    kg: KnowledgeGraph | None = None,
+) -> dict[str, Any]:
+    payload = {
         "rank": result.rank,
         "entity_id": result.entity_id,
         "label": result.entity.label,
         "entity_type": result.entity.entity_type,
+        "description": result.entity.description,
+        "aliases": list(result.entity.aliases),
+        "source_chunks": list(result.entity.source_chunks),
         "score": result.score,
         "retrieval_mode": result.retrieval_mode,
         "component_scores": dict(result.component_scores),
     }
+    if kg is not None and result.entity_id in kg.entities:
+        payload.update(
+            {
+                "degree": int(kg.graph.degree[result.entity_id]),
+                "in_degree": int(kg.graph.in_degree(result.entity_id)),
+                "out_degree": int(kg.graph.out_degree(result.entity_id)),
+                "pagerank": kg.pagerank.get(result.entity_id, 0.0),
+            }
+        )
+    return payload
+
+
+def _context_relation_payloads(
+    kg: KnowledgeGraph,
+    retrieved: list[Any],
+    *,
+    limit: int,
+) -> list[dict[str, Any]]:
+    retrieved_ids = {result.entity_id for result in retrieved}
+    if not retrieved_ids:
+        return []
+    relations = [
+        relation
+        for relation in kg.relations
+        if relation.subject_id in retrieved_ids or relation.object_id in retrieved_ids
+    ]
+    relations.sort(
+        key=lambda relation: (
+            not (
+                relation.subject_id in retrieved_ids
+                and relation.object_id in retrieved_ids
+            ),
+            -relation.confidence,
+            _relation_sort_key(kg, relation),
+        )
+    )
+    return [
+        _relation_payload(kg, relation, index)
+        for index, relation in enumerate(relations[:limit])
+    ]
+
+
+def _source_chunks_from_context(
+    retrieved: list[Any],
+    relation_payloads: list[dict[str, Any]],
+) -> list[str]:
+    chunks: list[str] = []
+    for result in retrieved:
+        chunks.extend(result.entity.source_chunks)
+    chunks.extend(
+        str(relation["source_chunk"])
+        for relation in relation_payloads
+        if relation.get("source_chunk")
+    )
+    unique_chunks: list[str] = []
+    seen: set[str] = set()
+    for chunk in chunks:
+        if chunk and chunk not in seen:
+            unique_chunks.append(chunk)
+            seen.add(chunk)
+    return unique_chunks[:20]
 
 
 def _matches_entity(entity: Any, normalized_query: str) -> bool:
@@ -944,6 +1213,12 @@ def _documents_from_payload(payload: dict[str, Any]) -> list[dict[str, str]]:
         content = str(raw_document.get("content", ""))
         documents.append({"filename": filename, "content": content})
     return documents
+
+
+def _read_json_artifact(path: Path) -> Any | None:
+    if not path.exists():
+        return None
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def _safe_markdown_filename(filename: str, index: int) -> str:

@@ -19,7 +19,8 @@ The planned MVP follows a small, testable architecture:
 5. Deduplication merges near-duplicate entities.
 6. Validation checks graph consistency against ontology constraints.
 7. Reasoning adds simple inferred relations.
-8. Retrieval combines semantic, lexical, and structural rankings through RRF.
+8. Retrieval uses Russian-aware lexical matching, optional structural PageRank,
+   semantic retrieval, and RRF fusion modes.
 9. The CLI runs graph building and question answering with local Gemma 4.
 10. Tests use internal test doubles for deterministic coverage.
 
@@ -83,6 +84,7 @@ uv run python -m hirag_ontology.cli ask \
   --graph results/knowledge_graph_full_gemma.json \
   --query "How is Ph+ ALL treated?" \
   --llm gemma \
+  --retrieval-mode lexical_structural \
   --show-context
 ```
 
@@ -100,11 +102,16 @@ Use it to test question answering without rebuilding the graph:
 ```bash
 uv run python -m hirag_ontology.cli ask \
   --graph results/knowledge_graph_full_gemma.json \
-  --query "How is Ph+ ALL treated?" \
+  --query "Как лечить Острый лимфобластный лейкоз (ОЛЛ)?" \
   --llm gemma \
-  --retrieval-mode lexical_only \
+  --retrieval-mode lexical_structural \
   --show-context
 ```
+
+For Russian clinical questions, `lexical_structural` is the default and usually
+works better than `hybrid_rrf` while the semantic embedding provider is still an
+MVP/demo component. Retrieval normalizes common variants such as `ОЛЛ`, `BCR ABL`
+/ `BCR-ABL` / `BCR::ABL`, `ТКИ`, and `ингибиторы тирозинкиназы`.
 
 Print graph statistics with:
 
@@ -182,9 +189,11 @@ uv --cache-dir .uv-cache run python -m hirag_ontology.cli web \
   --port 8765
 ```
 
-Ask mode can use local Gemma or deterministic graph-only answers. Pipeline runs
-use local Gemma through Ollama and may take a long time on large document sets.
-Neo4j import requires `NEO4J_PASSWORD` in `.env` and the optional Neo4j package.
+Ask mode can use local Gemma or deterministic graph-only answers. The default
+retrieval mode is `lexical_structural`, which prioritizes Russian medical term
+matches and uses PageRank only as a secondary signal. Pipeline runs use local
+Gemma through Ollama and may take a long time on large document sets. Neo4j
+import requires `NEO4J_PASSWORD` in `.env` and the optional Neo4j package.
 
 ## Local Gemma 4 Runtime
 

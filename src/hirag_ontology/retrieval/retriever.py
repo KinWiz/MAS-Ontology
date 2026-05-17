@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import math
+import re
 from collections import Counter
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -75,6 +76,7 @@ class RetrievalMode(StrEnum):
 
     SEMANTIC_ONLY = "semantic_only"
     LEXICAL_ONLY = "lexical_only"
+    LEXICAL_STRUCTURAL = "lexical_structural"
     STRUCTURAL_ONLY = "structural_only"
     HYBRID_RRF = "hybrid_rrf"
 
@@ -98,7 +100,7 @@ class HybridRetriever:
         self,
         kg: KnowledgeGraph,
         embedding_provider: EmbeddingProvider,
-        mode: RetrievalMode = RetrievalMode.HYBRID_RRF,
+        mode: RetrievalMode = RetrievalMode.LEXICAL_STRUCTURAL,
         rrf_k: int = 60,
     ) -> None:
         self.kg = kg
@@ -117,6 +119,14 @@ class HybridRetriever:
         if self.mode == RetrievalMode.LEXICAL_ONLY:
             ranked = self._lexical_scores(query)
             return self._to_results(ranked, top_k, self.mode.value, "lexical")
+        if self.mode == RetrievalMode.LEXICAL_STRUCTURAL:
+            ranked, component_scores = self._lexical_structural_scores(query)
+            return self._to_results(
+                ranked,
+                top_k,
+                self.mode.value,
+                component_scores=component_scores,
+            )
         if self.mode == RetrievalMode.STRUCTURAL_ONLY:
             ranked = self._structural_scores()
             return self._to_results(ranked, top_k, self.mode.value, "structural")
@@ -154,7 +164,10 @@ class HybridRetriever:
 
     def _semantic_scores(self, query: str) -> list[tuple[str, float]]:
         entity_items = list(self.kg.entities.items())
-        query_vector = self.embedding_provider.encode([query], normalize=True)[0]
+        query_vector = self.embedding_provider.encode(
+            [expand_text_for_retrieval(query)],
+            normalize=True,
+        )[0]
         missing_items = [
             (entity_id, entity)
             for entity_id, entity in entity_items
@@ -181,13 +194,42 @@ class HybridRetriever:
         entity_items = list(self.kg.entities.items())
         documents = [entity_document(entity) for _, entity in entity_items]
         tokenized_documents = [tokenize(document) for document in documents]
-        scores = bm25_scores(tokenize(query), tokenized_documents)
+        query_tokens = tokenize(expand_text_for_retrieval(query))
+        scores = bm25_scores(query_tokens, tokenized_documents)
         return self._sort_scores(
             [
                 (entity_id, score)
                 for (entity_id, _), score in zip(entity_items, scores, strict=True)
             ]
         )
+
+    def _lexical_structural_scores(
+        self,
+        query: str,
+    ) -> tuple[list[tuple[str, float]], dict[str, dict[str, float]]]:
+        lexical = self._lexical_scores(query)
+        structural = self._structural_scores()
+        lexical_scores = dict(lexical)
+        structural_scores = dict(structural)
+        normalized_lexical = _normalize_scores(lexical_scores)
+        normalized_structural = _normalize_scores(structural_scores)
+        lexical_weight = 0.85
+        structural_weight = 0.15
+        scores = [
+            (
+                entity_id,
+                (lexical_weight * normalized_lexical.get(entity_id, 0.0))
+                + (
+                    structural_weight
+                    * normalized_structural.get(entity_id, 0.0)
+                ),
+            )
+            for entity_id in self.kg.entities
+        ]
+        return self._sort_scores(scores), {
+            "lexical": lexical_scores,
+            "structural": structural_scores,
+        }
 
     def _structural_scores(self) -> list[tuple[str, float]]:
         if set(self.kg.pagerank) != set(self.kg.entities):
@@ -204,7 +246,8 @@ class HybridRetriever:
         ranked: list[tuple[str, float]],
         top_k: int,
         retrieval_mode: str,
-        component_name: str,
+        component_name: str | None = None,
+        component_scores: dict[str, dict[str, float]] | None = None,
     ) -> list[RetrievedEntity]:
         return [
             RetrievedEntity(
@@ -213,7 +256,14 @@ class HybridRetriever:
                 score=score,
                 rank=rank,
                 retrieval_mode=retrieval_mode,
-                component_scores={component_name: score},
+                component_scores=(
+                    {
+                        name: scores.get(entity_id, 0.0)
+                        for name, scores in component_scores.items()
+                    }
+                    if component_scores is not None
+                    else ({component_name: score} if component_name is not None else {})
+                ),
             )
             for rank, (entity_id, score) in enumerate(ranked[:top_k], start=1)
         ]
@@ -231,21 +281,35 @@ class HybridRetriever:
 
 def entity_document(entity: Entity) -> str:
     """Build the text representation indexed for retrieval."""
-    return " ".join(
+    raw_document = " ".join(
         part
         for part in [
+            entity.label,
             entity.label,
             entity.entity_type,
             entity.description,
             " ".join(entity.aliases),
+            " ".join(entity.aliases),
         ]
         if part
     )
+    return expand_text_for_retrieval(raw_document)
 
 
 def tokenize(text: str) -> list[str]:
-    """Tokenize by lowercase whitespace for the MVP."""
-    return text.casefold().split()
+    """Tokenize mixed Russian/Latin medical text with light normalization."""
+    normalized = _normalize_search_text(text)
+    return re.findall(r"[a-zа-я0-9]+\+?", normalized)
+
+
+def expand_text_for_retrieval(text: str) -> str:
+    """Expand common oncology synonyms and spelling variants for retrieval."""
+    normalized = _normalize_search_text(text)
+    expansions: list[str] = []
+    for pattern, synonyms in _SYNONYM_RULES:
+        if re.search(pattern, normalized):
+            expansions.extend(synonyms)
+    return " ".join([text, *expansions])
 
 
 def bm25_scores(
@@ -314,3 +378,114 @@ def _normalize_vector(vector: list[float]) -> list[float]:
     if norm == 0.0:
         return list(vector)
     return [value / norm for value in vector]
+
+
+def _normalize_search_text(text: str) -> str:
+    normalized = text.casefold().replace("ё", "е")
+    normalized = re.sub(
+        r"\bbcr\s*(?:::|[-/\\]|\s)\s*abl\s*1?\b",
+        " bcr abl bcrabl bcr-abl bcr-abl1 ",
+        normalized,
+    )
+    normalized = re.sub(
+        r"\bbcr\s*(?:::|[-/\\])\s*abl",
+        " bcr abl bcrabl bcr-abl ",
+        normalized,
+    )
+    normalized = re.sub(r"\bph\s*\+\b", " ph+ ph positive ", normalized)
+    normalized = re.sub(r"\bph\s*-\b", " ph- ph negative ", normalized)
+    normalized = re.sub(r"[^\wа-яА-ЯёЁ+]+", " ", normalized)
+    return re.sub(r"\s+", " ", normalized).strip()
+
+
+def _normalize_scores(scores: dict[str, float]) -> dict[str, float]:
+    if not scores:
+        return {}
+    max_score = max(scores.values())
+    if max_score <= 0:
+        return {entity_id: 0.0 for entity_id in scores}
+    return {
+        entity_id: score / max_score
+        for entity_id, score in scores.items()
+    }
+
+
+_SYNONYM_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    (
+        r"\bостр\w*\s+лимфобластн\w*\s+лейкоз\w*\b|\bолл\b",
+        (
+            "олл",
+            "острый лимфобластный лейкоз",
+            "лимфобластный лейкоз",
+            "all",
+            "acute lymphoblastic leukemia",
+        ),
+    ),
+    (
+        r"\bb\s*[- ]?\s*олл\b|\bв\s*[- ]?\s*олл\b|\bb\s*cell\s+all\b",
+        (
+            "в олл",
+            "в-олл",
+            "b-олл",
+            "b cell acute lymphoblastic leukemia",
+        ),
+    ),
+    (
+        r"\bt\s*[- ]?\s*олл\b|\bt\s*cell\s+all\b",
+        (
+            "t олл",
+            "t-олл",
+            "t cell acute lymphoblastic leukemia",
+        ),
+    ),
+    (
+        r"\bbcr\s+abl\b|\bbcrabl\b|\bbcr\s+abl1\b",
+        (
+            "bcr-abl",
+            "bcr::abl",
+            "bcr::abl1",
+            "bcr abl",
+            "филадельфийская хромосома",
+        ),
+    ),
+    (
+        r"\bph\+\b|ph\s*позитивн\w*|филадельфийск\w*",
+        (
+            "ph+",
+            "ph positive",
+            "ph-позитивный",
+            "филадельфийская хромосома",
+            "bcr-abl",
+        ),
+    ),
+    (
+        r"\bингибитор\w*\s+тирозинкиназ\w*\b|\bтки\b|tyrosine\s+kinase",
+        (
+            "тки",
+            "ингибиторы тирозинкиназы",
+            "ингибитор тирозинкиназы",
+            "tyrosine kinase inhibitor",
+            "bcr-abl",
+        ),
+    ),
+    (
+        r"\bлеч\w*\b|\bтерап\w*\b|\btreat\w*\b",
+        (
+            "лечение",
+            "терапия",
+            "химиотерапия",
+            "протокол лечения",
+            "treats",
+        ),
+    ),
+    (
+        r"\bтгск\b|\bткм\b|трансплантац\w*\s+костн\w*\s+мозг\w*|"
+        r"трансплантац\w*\s+гемопоэтическ\w*",
+        (
+            "тгск",
+            "ткм",
+            "трансплантация костного мозга",
+            "трансплантация гемопоэтических стволовых клеток",
+        ),
+    ),
+)

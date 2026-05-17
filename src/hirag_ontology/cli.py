@@ -84,7 +84,7 @@ def build_parser() -> argparse.ArgumentParser:
     ask.add_argument(
         "--retrieval-mode",
         choices=tuple(mode.value for mode in RetrievalMode),
-        default=RetrievalMode.HYBRID_RRF.value,
+        default=RetrievalMode.LEXICAL_STRUCTURAL.value,
         help="Retrieval mode for selecting graph entities.",
     )
     ask.add_argument(
@@ -199,7 +199,7 @@ def run_ask(args: argparse.Namespace) -> int:
             demo_embedding_provider(),
             mode=RetrievalMode(args.retrieval_mode),
         ).retrieve(args.query, top_k=args.top_k)
-        graph_context = build_graph_context(kg, retrieved)
+        graph_context = build_graph_context(kg, retrieved, query=args.query)
         answer = answer_from_graph_context(
             _build_gemma_answer_client(),
             query=args.query,

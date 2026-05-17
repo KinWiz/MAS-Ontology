@@ -1,6 +1,8 @@
 from hirag_ontology.app.web_demo import (
     ask_payload,
     dashboard_payload,
+    neo4j_status_payload,
+    retrieval_compare_payload,
     search_entities_payload,
     subgraph_payload,
 )
@@ -42,6 +44,9 @@ def test_web_dashboard_payload_contains_counts_and_validation(tmp_path) -> None:
     assert payload["relation_count"] == 2
     assert payload["type_distribution"]["Drug"] == 1
     assert payload["validation"]["status"] == "valid"
+    assert payload["graph_metrics"]["connected_components"] == 1
+    assert payload["graph_metrics"]["isolated_entities"] == 0
+    assert payload["top_predicates"][0]["predicate"] in {"diagnosed_by", "treats"}
     assert payload["top_by_degree"]
     assert payload["top_by_pagerank"]
 
@@ -88,4 +93,30 @@ def test_web_ask_payload_uses_deterministic_mode_without_llm(tmp_path) -> None:
     assert "answer" in payload
     assert "Ph+ acute lymphoblastic leukemia" in payload["answer"]
     assert payload["retrieved_entities"]
+    assert payload["diagnostics"]["retrieval_mode"] == "lexical_only"
+    assert payload["context_relations"]
     assert "Graph Context" not in payload["graph_context"]
+
+
+def test_web_retrieval_compare_payload_returns_modes(tmp_path) -> None:
+    graph_path, _ = _graph_path(tmp_path)
+
+    payload = retrieval_compare_payload(
+        graph_path=graph_path,
+        query="How is Ph+ ALL treated?",
+        top_k=2,
+    )
+
+    assert "lexical_only" in payload["modes"]
+    assert "lexical_structural" in payload["modes"]
+    assert payload["modes"]["lexical_only"]["items"]
+
+
+def test_web_neo4j_status_does_not_require_password(monkeypatch) -> None:
+    monkeypatch.delenv("NEO4J_PASSWORD", raising=False)
+
+    payload = neo4j_status_payload()
+
+    assert payload["configured"] is False
+    assert payload["connected"] is False
+    assert payload["target"]["password_set"] is False

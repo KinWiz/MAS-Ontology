@@ -1,35 +1,130 @@
 <!doctype html>
-<html lang="en">
+<html lang="ru">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>HiRAG-Ontology Web UI</title>
+    <title>HiRAG-Ontology</title>
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
   <body>
     <div class="app-shell">
       <header class="topbar">
-        <div>
+        <div class="brand">
           <h1>HiRAG-Ontology</h1>
           <p id="graphPathLabel">results/knowledge_graph_full_gemma.json</p>
         </div>
-        <form id="graphForm" class="graph-form">
-          <input
-            id="graphPathInput"
-            name="graph"
-            type="text"
-            value="results/knowledge_graph_full_gemma.json"
-            aria-label="Graph path"
-          />
-          <button type="submit">Reload</button>
-        </form>
+        <details class="graph-settings">
+          <summary>Граф</summary>
+          <form id="graphForm" class="graph-form">
+            <input
+              id="graphPathInput"
+              name="graph"
+              type="text"
+              value="results/knowledge_graph_full_gemma.json"
+              aria-label="Путь к графу"
+            />
+            <button type="submit">Загрузить</button>
+          </form>
+        </details>
       </header>
 
+      <nav class="nav-tabs" aria-label="Разделы">
+        <button type="button" class="main-tab active" data-view="ask">Вопрос</button>
+        <button type="button" class="main-tab" data-view="dashboard">Dashboard</button>
+        <button type="button" class="main-tab" data-view="explorer">Graph</button>
+        <button type="button" class="main-tab" data-view="quality">Quality</button>
+        <button type="button" class="main-tab" data-view="pipeline">Pipeline</button>
+      </nav>
+
       <main class="workspace">
-        <section class="surface dashboard-surface">
+        <section id="ask" class="surface ask-surface view-panel active">
+          <form id="askForm" class="ask-form primary-ask">
+            <textarea
+              id="questionInput"
+              rows="7"
+              placeholder="Введите клинический вопрос"
+              required
+            ></textarea>
+            <div class="ask-actions">
+              <button type="submit">Получить ответ</button>
+              <span id="askStatus" class="muted">Готово</span>
+            </div>
+            <details class="advanced-options">
+              <summary>Настройки и сравнение retrieval</summary>
+              <div class="control-row">
+                <label>
+                  Retrieval
+                  <select id="retrievalMode"></select>
+                </label>
+                <label>
+                  top_k
+                  <input id="topK" type="number" min="1" max="20" value="8" />
+                </label>
+                <label>
+                  Answer
+                  <select id="llmMode">
+                    <option value="gemma">Gemma</option>
+                    <option value="deterministic">Deterministic</option>
+                  </select>
+                </label>
+                <button id="compareModesButton" type="button" class="secondary">
+                  Сравнить режимы
+                </button>
+              </div>
+            </details>
+          </form>
+
+          <div id="askResults" class="ask-results hidden">
+            <div class="answer-panel">
+              <div class="subtabs" role="tablist" aria-label="Результат">
+                <button type="button" class="subtab active" data-tab="answerTab">
+                  Ответ
+                </button>
+                <button type="button" class="subtab" data-tab="entitiesTab">
+                  Найдено
+                </button>
+                <button type="button" class="subtab" data-tab="contextTab">
+                  Контекст
+                </button>
+                <button type="button" class="subtab" data-tab="diagnosticsTab">
+                  Диагностика
+                </button>
+                <button type="button" class="subtab" data-tab="sourcesTab">
+                  Источники
+                </button>
+              </div>
+              <div id="answerTab" class="tab-panel active">
+                <pre id="answerBox" class="text-output answer-output"></pre>
+              </div>
+              <div id="entitiesTab" class="tab-panel">
+                <div class="section-title compact">
+                  <h3>Retrieved Entities</h3>
+                  <button id="showRetrievedSubgraph" type="button" disabled>
+                    Показать подграф
+                  </button>
+                </div>
+                <div id="retrievedEntities" class="entity-list"></div>
+                <h3>Graph Facts</h3>
+                <div id="contextRelations" class="relation-list"></div>
+              </div>
+              <div id="contextTab" class="tab-panel">
+                <pre id="graphContext" class="text-output"></pre>
+              </div>
+              <div id="diagnosticsTab" class="tab-panel">
+                <div id="askDiagnostics" class="kv-grid"></div>
+                <div id="compareResults" class="compare-grid"></div>
+              </div>
+              <div id="sourcesTab" class="tab-panel">
+                <div id="sourceChunks" class="chip-list"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="dashboard" class="surface dashboard-surface view-panel">
           <div class="section-title">
             <h2>Dashboard</h2>
-            <span id="validationBadge" class="badge">Loading</span>
+            <span id="validationBadge" class="badge">Загрузка</span>
           </div>
           <div class="metrics">
             <div class="metric">
@@ -42,13 +137,29 @@
             </div>
             <div class="metric">
               <span>Consistency</span>
-              <strong id="consistencyScore">0.00</strong>
+              <strong id="consistencyScore">0.000</strong>
+            </div>
+            <div class="metric">
+              <span>Components</span>
+              <strong id="componentCount">0</strong>
+            </div>
+            <div class="metric">
+              <span>Sources</span>
+              <strong id="sourceChunkCount">0</strong>
+            </div>
+            <div class="metric">
+              <span>Isolated</span>
+              <strong id="isolatedCount">0</strong>
             </div>
           </div>
           <div class="dashboard-grid">
             <div>
               <h3>Type Distribution</h3>
               <div id="typeDistribution" class="bar-list"></div>
+            </div>
+            <div>
+              <h3>Top Predicates</h3>
+              <div id="topPredicates" class="bar-list compact-bars"></div>
             </div>
             <div>
               <h3>Top by Degree</h3>
@@ -61,70 +172,18 @@
           </div>
         </section>
 
-        <section class="surface ask-surface">
-          <div class="section-title">
-            <h2>Ask / Query</h2>
-            <span id="askStatus" class="muted">Idle</span>
-          </div>
-          <form id="askForm" class="ask-form">
-            <textarea
-              id="questionInput"
-              rows="4"
-              placeholder="Какой протокол лечения острого лимфобластного лейкоза у детей и чем отличается лечение Ph+ ALL?"
-              required
-            ></textarea>
-            <div class="control-row">
-              <label>
-                Retrieval
-                <select id="retrievalMode"></select>
-              </label>
-              <label>
-                top_k
-                <input id="topK" type="number" min="1" max="20" value="5" />
-              </label>
-              <label>
-                Answer
-                <select id="llmMode">
-                  <option value="gemma">Gemma</option>
-                  <option value="deterministic">Deterministic</option>
-                </select>
-              </label>
-              <button type="submit">Ask</button>
-            </div>
-          </form>
-          <div class="answer-layout">
-            <div>
-              <h3>Answer</h3>
-              <pre id="answerBox" class="text-output"></pre>
-            </div>
-            <div>
-              <div class="section-title compact">
-                <h3>Retrieved Entities</h3>
-                <button id="showRetrievedSubgraph" type="button" disabled>
-                  Show Retrieved Subgraph
-                </button>
-              </div>
-              <div id="retrievedEntities" class="entity-list"></div>
-            </div>
-          </div>
-          <details class="context-block" open>
-            <summary>Graph Context</summary>
-            <pre id="graphContext" class="text-output"></pre>
-          </details>
-        </section>
-
-        <section class="surface explorer-surface">
+        <section id="explorer" class="surface explorer-surface view-panel">
           <div class="section-title">
             <h2>Graph Explorer</h2>
-            <span id="graphStatus" class="muted">No entity selected</span>
+            <span id="graphStatus" class="muted">Узел не выбран</span>
           </div>
           <div class="explorer-grid">
             <aside class="entity-search">
               <input
                 id="entitySearchInput"
                 type="search"
-                placeholder="Search entity"
-                aria-label="Search entity"
+                placeholder="Поиск entity"
+                aria-label="Поиск entity"
               />
               <label>
                 Entity type
@@ -150,24 +209,46 @@
                 Limit nodes
                 <input id="limitNodesInput" type="number" min="10" max="200" value="60" />
               </label>
+              <label class="inline-check">
+                <input id="edgeLabelsToggle" type="checkbox" checked />
+                Edge labels
+              </label>
               <div id="entitySearchResults" class="entity-list"></div>
+              <button id="loadMoreEntities" type="button" class="secondary" disabled>
+                Еще
+              </button>
             </aside>
             <div class="graph-zone">
+              <div class="graph-toolbar">
+                <button id="graphZoomIn" type="button" class="secondary">+</button>
+                <button id="graphZoomOut" type="button" class="secondary">-</button>
+                <button id="graphResetView" type="button" class="secondary">Сброс</button>
+              </div>
               <svg id="graphSvg" role="img" aria-label="Knowledge graph"></svg>
             </div>
             <aside id="entityPanel" class="entity-panel">
               <h3>EntityPanel</h3>
               <div id="entityPanelContent" class="panel-content muted">
-                Select a node
+                Выберите узел
               </div>
             </aside>
           </div>
         </section>
 
-        <section class="surface pipeline-surface">
+        <section id="quality" class="surface quality-surface view-panel">
+          <div class="section-title">
+            <h2>Quality</h2>
+            <button id="reloadQualityButton" type="button" class="secondary">
+              Обновить
+            </button>
+          </div>
+          <div id="qualitySummary" class="quality-grid"></div>
+        </section>
+
+        <section id="pipeline" class="surface pipeline-surface view-panel">
           <div class="section-title">
             <h2>Pipeline</h2>
-            <span id="pipelineStatus" class="muted">Idle</span>
+            <span id="pipelineStatus" class="muted">Готово</span>
           </div>
           <form id="pipelineForm" class="pipeline-form">
             <input id="documentInput" type="file" accept=".md,text/markdown" multiple />
@@ -175,17 +256,23 @@
               id="pipelineOutPath"
               type="text"
               value="results/web_pipeline_graph.json"
-              aria-label="Pipeline output path"
+              aria-label="Путь результата pipeline"
             />
-            <button type="submit">Run Pipeline</button>
+            <button type="submit">Запустить pipeline</button>
           </form>
           <div id="stageList" class="stage-list"></div>
+          <div id="pipelineSummary" class="kv-grid"></div>
           <div class="neo4j-row">
-            <label>
+            <label class="inline-check">
               <input id="clearNeo4j" type="checkbox" checked />
               Clear Neo4j before import
             </label>
-            <button id="exportNeo4jButton" type="button">Import Result to Neo4j</button>
+            <button id="testNeo4jButton" type="button" class="secondary">
+              Test Neo4j
+            </button>
+            <button id="exportNeo4jButton" type="button">
+              Import Result to Neo4j
+            </button>
             <span id="neo4jStatus" class="muted"></span>
           </div>
         </section>

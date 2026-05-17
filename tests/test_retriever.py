@@ -10,6 +10,8 @@ from hirag_ontology.retrieval.retriever import (
     HybridRetriever,
     RetrievalMode,
     bm25_scores,
+    expand_text_for_retrieval,
+    tokenize,
 )
 from hirag_ontology.retrieval.rrf import rrf_fusion
 
@@ -69,8 +71,10 @@ def test_rrf_fusion_uses_one_based_ranks_and_k() -> None:
 
     assert fused[0][0] == "b"
     assert fused[0][1] == pytest.approx((1 / 62) + (1 / 61))
-    assert fused[1] == ("a", pytest.approx(1 / 61))
-    assert fused[2] == ("c", pytest.approx(1 / 62))
+    assert fused[1][0] == "a"
+    assert fused[1][1] == pytest.approx(1 / 61)
+    assert fused[2][0] == "c"
+    assert fused[2][1] == pytest.approx(1 / 62)
 
 
 def test_bm25_scores_are_deterministic() -> None:
@@ -120,6 +124,63 @@ def test_lexical_only_ranking_uses_label_alias_description_and_type() -> None:
 
     assert [result.entity.label for result in results] == ["imatinib", "dasatinib"]
     assert results[0].score > results[1].score
+
+
+def test_tokenize_expands_russian_oncology_synonyms() -> None:
+    tokens = tokenize(
+        expand_text_for_retrieval(
+            "лечение острого лимфобластного лейкоза BCR ABL "
+            "ингибиторы тирозинкиназы"
+        )
+    )
+
+    assert "олл" in tokens
+    assert "bcr" in tokens
+    assert "abl" in tokens
+    assert "тки" in tokens
+    assert "химиотерапия" in tokens
+
+
+def test_lexical_structural_prioritizes_russian_medical_matches() -> None:
+    kg = KnowledgeGraph()
+    oll_id = kg.add_entity(
+        Entity(
+            label="Острый лимфобластный лейкоз (ОЛЛ)",
+            entity_type="Condition",
+            aliases=["ОЛЛ"],
+        )
+    )
+    tki_id = kg.add_entity(
+        Entity(
+            label="ингибиторы тирозинкиназы BCR-ABL",
+            entity_type="Drug",
+            aliases=["ТКИ"],
+        )
+    )
+    unrelated_id = kg.add_entity(
+        Entity(label="Рак билиарного тракта", entity_type="Condition")
+    )
+    kg.add_relation_by_ids(tki_id, "treats", oll_id)
+    kg.add_relation_by_ids(unrelated_id, "related_to", oll_id)
+
+    retriever = HybridRetriever(
+        kg,
+        _embedding_provider(),
+        mode=RetrievalMode.LEXICAL_STRUCTURAL,
+    )
+
+    results = retriever.retrieve(
+        "лечение острого лимфобластного лейкоза BCR ABL "
+        "ингибиторы тирозинкиназы",
+        top_k=2,
+    )
+
+    assert [result.entity.label for result in results] == [
+        "ингибиторы тирозинкиназы BCR-ABL",
+        "Острый лимфобластный лейкоз (ОЛЛ)",
+    ]
+    assert results[0].retrieval_mode == "lexical_structural"
+    assert set(results[0].component_scores) == {"lexical", "structural"}
 
 
 def test_structural_only_ranking_uses_pagerank() -> None:

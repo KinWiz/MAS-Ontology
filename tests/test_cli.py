@@ -44,7 +44,7 @@ def test_parser_exposes_ask_defaults() -> None:
     assert args.query == "How is Ph+ ALL treated?"
     assert args.llm == "gemma"
     assert args.top_k == 5
-    assert args.retrieval_mode == "hybrid_rrf"
+    assert args.retrieval_mode == "lexical_structural"
     assert args.show_context is False
 
 
