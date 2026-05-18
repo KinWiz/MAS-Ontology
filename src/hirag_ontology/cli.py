@@ -8,8 +8,9 @@ from collections.abc import Sequence
 
 from hirag_ontology import __version__
 from hirag_ontology.app.web_demo import run_server
-from hirag_ontology.config import load_gemma_settings, load_neo4j_settings
-from hirag_ontology.llm import GemmaOllamaClient
+from hirag_ontology.config import load_neo4j_settings
+from hirag_ontology.evaluation.run_full_eval import run_full_evaluation
+from hirag_ontology.llm import SUPPORTED_LLM_BACKENDS, LLMClient, build_llm_client
 from hirag_ontology.pipeline.knowledge_graph import KnowledgeGraph
 from hirag_ontology.pipeline.runner import demo_embedding_provider, run_demo_pipeline
 from hirag_ontology.retrieval.answering import (
@@ -50,9 +51,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run_demo.add_argument(
         "--llm",
-        choices=("gemma",),
+        choices=SUPPORTED_LLM_BACKENDS,
         default="gemma",
-        help="LLM backend to use. Gemma mode uses local Ollama.",
+        help="LLM backend to use for extraction and typing.",
     )
 
     ask = subparsers.add_parser(
@@ -71,9 +72,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     ask.add_argument(
         "--llm",
-        choices=("gemma",),
+        choices=SUPPORTED_LLM_BACKENDS,
         default="gemma",
-        help="Answer backend to use. Gemma mode uses local Ollama.",
+        help="Answer backend to use.",
     )
     ask.add_argument(
         "--top-k",
@@ -159,6 +160,59 @@ def build_parser() -> argparse.ArgumentParser:
         help="Default graph JSON opened by the Web UI.",
     )
 
+    evaluate = subparsers.add_parser(
+        "evaluate",
+        help="Run retrieval, generation, latency, and dedup evaluation.",
+    )
+    evaluate.add_argument(
+        "--kg",
+        default="results/knowledge_graph_full_gemma.json",
+        help="Path to a saved knowledge graph JSON.",
+    )
+    evaluate.add_argument(
+        "--gt",
+        default="evaluation/ground_truth.json",
+        help="Path to benchmark ground-truth JSON.",
+    )
+    evaluate.add_argument(
+        "--out-dir",
+        default="results",
+        help="Directory where evaluation artifacts will be written.",
+    )
+    evaluate.add_argument(
+        "--top-k",
+        type=int,
+        default=10,
+        help="Number of entities to retrieve per question.",
+    )
+    evaluate.add_argument(
+        "--n-latency",
+        type=int,
+        default=20,
+        help="Number of questions used for latency evaluation.",
+    )
+    evaluate.add_argument(
+        "--n-generation",
+        type=int,
+        default=None,
+        help="Optional number of questions used for generation evaluation.",
+    )
+    evaluate.add_argument(
+        "--skip-generation",
+        action="store_true",
+        help="Skip answer-generation metrics.",
+    )
+    evaluate.add_argument(
+        "--skip-dedup",
+        action="store_true",
+        help="Skip deduplication ablation.",
+    )
+    evaluate.add_argument(
+        "--apply-dedup-ablation",
+        action="store_true",
+        help="Apply each dedup config to a graph copy during ablation.",
+    )
+
     return parser
 
 
@@ -201,7 +255,7 @@ def run_ask(args: argparse.Namespace) -> int:
         ).retrieve(args.query, top_k=args.top_k)
         graph_context = build_graph_context(kg, retrieved, query=args.query)
         answer = answer_from_graph_context(
-            _build_gemma_answer_client(),
+            _build_answer_client(args.llm),
             query=args.query,
             graph_context=graph_context,
         )
@@ -278,16 +332,37 @@ def run_web(args: argparse.Namespace) -> int:
     return 0
 
 
-def _build_gemma_answer_client() -> GemmaOllamaClient:
-    settings = load_gemma_settings()
-    return GemmaOllamaClient(
-        model=settings.model,
-        base_url=settings.base_url,
-        temperature=settings.temperature,
-        max_retries=settings.max_retries,
-        min_request_interval_seconds=settings.min_request_interval_seconds,
-        request_timeout_seconds=settings.request_timeout_seconds,
-    )
+def run_evaluate(args: argparse.Namespace) -> int:
+    """Run the full deterministic evaluation suite."""
+    try:
+        report = run_full_evaluation(
+            kg_path=args.kg,
+            gt_path=args.gt,
+            out_dir=args.out_dir,
+            top_k=args.top_k,
+            n_latency=args.n_latency,
+            n_generation=args.n_generation,
+            skip_generation=args.skip_generation,
+            skip_dedup=args.skip_dedup,
+            apply_dedup_ablation=args.apply_dedup_ablation,
+        )
+    except (FileNotFoundError, RuntimeError, ValueError) as error:
+        print(f"error: {error}")
+        return 2
+
+    print(f"Evaluation report saved: {args.out_dir}/full_evaluation_report.json")
+    print(f"Components: {', '.join(report['components'])}")
+    return 0
+
+
+def _build_answer_client(llm: str) -> LLMClient:
+    if llm == "gemma":
+        return _build_gemma_answer_client()
+    return build_llm_client(llm)
+
+
+def _build_gemma_answer_client() -> LLMClient:
+    return build_llm_client("gemma")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -305,6 +380,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return run_export_neo4j(args)
     if args.command == "web":
         return run_web(args)
+    if args.command == "evaluate":
+        return run_evaluate(args)
 
     parser.print_help()
     return 0

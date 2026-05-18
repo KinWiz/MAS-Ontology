@@ -7,8 +7,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from hirag_ontology.config import load_gemma_settings
-from hirag_ontology.llm import GemmaOllamaClient, LLMClient
+from hirag_ontology.llm import SUPPORTED_LLM_BACKENDS, LLMClient, build_llm_client
 from hirag_ontology.ontology import load_ontology
 from hirag_ontology.pipeline.chunking import load_markdown_chunks
 from hirag_ontology.pipeline.deduplication import DeduplicationAgent
@@ -36,8 +35,8 @@ def run_demo_pipeline(
     overlap: int = 100,
 ) -> dict[str, Any]:
     """Run the MVP demo pipeline."""
-    if llm != "gemma":
-        msg = "llm must be: gemma"
+    if llm not in SUPPORTED_LLM_BACKENDS:
+        msg = f"llm must be one of: {', '.join(SUPPORTED_LLM_BACKENDS)}"
         raise ValueError(msg)
 
     input_path = _resolve_input_dir(input_dir)
@@ -133,20 +132,7 @@ def run_demo_pipeline(
 
 
 def _build_extraction_client(llm: str) -> LLMClient:
-    settings = load_gemma_settings()
-    logger.info(
-        "Using local Gemma 4 runtime: model=%s base_url=%s",
-        settings.model,
-        settings.base_url,
-    )
-    return GemmaOllamaClient(
-        model=settings.model,
-        base_url=settings.base_url,
-        temperature=settings.temperature,
-        max_retries=settings.max_retries,
-        min_request_interval_seconds=settings.min_request_interval_seconds,
-        request_timeout_seconds=settings.request_timeout_seconds,
-    )
+    return build_llm_client(llm)
 
 
 def _build_typing_client(llm: str, extraction_client: LLMClient) -> LLMClient:

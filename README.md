@@ -5,8 +5,9 @@ multi-agent RAG system that constructs and queries a typed medical knowledge
 graph from Markdown documents.
 
 This repository is a Python research prototype scaffold with a local Gemma 4
-runtime through Ollama. Tests use deterministic test doubles and do not require
-network access, cloud services, or API keys.
+runtime through Ollama plus optional ChatGPT/OpenAI and DeepSeek API backends.
+Tests use deterministic test doubles and do not require network access, cloud
+services, or API keys.
 
 ## MVP Architecture
 
@@ -21,7 +22,8 @@ The planned MVP follows a small, testable architecture:
 7. Reasoning adds simple inferred relations.
 8. Retrieval uses Russian-aware lexical matching, optional structural PageRank,
    semantic retrieval, and RRF fusion modes.
-9. The CLI runs graph building and question answering with local Gemma 4.
+9. The CLI runs graph building and question answering with Gemma, OpenAI, or
+   DeepSeek backends.
 10. Tests use internal test doubles for deterministic coverage.
 
 For the MVP, graph storage uses NetworkX plus JSON persistence by default. Neo4j
@@ -189,16 +191,17 @@ uv --cache-dir .uv-cache run python -m hirag_ontology.cli web \
   --port 8765
 ```
 
-Ask mode can use local Gemma or deterministic graph-only answers. The default
-retrieval mode is `lexical_structural`, which prioritizes Russian medical term
-matches and uses PageRank only as a secondary signal. Pipeline runs use local
-Gemma through Ollama and may take a long time on large document sets. Neo4j
-import requires `NEO4J_PASSWORD` in `.env` and the optional Neo4j package.
+Ask mode can use local Gemma, ChatGPT/OpenAI API, DeepSeek API, or deterministic
+graph-only answers. The default retrieval mode is `lexical_structural`, which
+prioritizes Russian medical term matches and uses PageRank only as a secondary
+signal. Pipeline runs can use Gemma, OpenAI, or DeepSeek and may take a long
+time on large document sets. Neo4j import requires `NEO4J_PASSWORD` in `.env`
+and the optional Neo4j package.
 
 ## Local Gemma 4 Runtime
 
-LLM calls are local and never used by tests. Install Ollama, pull Gemma 4, and
-start the local Ollama service:
+Gemma calls are local and never used by tests. Install Ollama, pull Gemma 4,
+and start the local Ollama service:
 
 ```bash
 ollama pull gemma4
@@ -222,7 +225,54 @@ GEMMA_TEMPERATURE=0.0
 GEMMA_REQUEST_TIMEOUT_SECONDS=600
 ```
 
-Run the pipeline with local Gemma 4:
+## Optional Remote LLM APIs
+
+OpenAI and DeepSeek are opt-in. Tests never require these keys, and runtime
+logs only show whether a key is configured, never the key value.
+
+Configure OpenAI / ChatGPT API in `.env`:
+
+```text
+OPENAI_API_KEY=
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_MODEL=gpt-4o-mini
+OPENAI_MAX_RETRIES=2
+OPENAI_MIN_REQUEST_INTERVAL_SECONDS=0.5
+OPENAI_TEMPERATURE=0.0
+OPENAI_REQUEST_TIMEOUT_SECONDS=120
+```
+
+Configure DeepSeek API in `.env`:
+
+```text
+DEEPSEEK_API_KEY=
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+DEEPSEEK_MODEL=deepseek-chat
+DEEPSEEK_MAX_RETRIES=2
+DEEPSEEK_MIN_REQUEST_INTERVAL_SECONDS=0.5
+DEEPSEEK_TEMPERATURE=0.0
+DEEPSEEK_REQUEST_TIMEOUT_SECONDS=120
+```
+
+Use a backend from the CLI:
+
+```bash
+uv run python -m hirag_ontology.cli ask \
+  --graph results/knowledge_graph_full_gemma.json \
+  --query "Какой протокол используется при ОПЛ?" \
+  --llm openai
+
+uv run python -m hirag_ontology.cli ask \
+  --graph results/knowledge_graph_full_gemma.json \
+  --query "Какой протокол используется при ОПЛ?" \
+  --llm deepseek
+```
+
+The Web UI exposes the same choice in the answer settings and in the pipeline
+form. Remote API calls use rate limiting, retry handling, JSON mode for
+extraction/typing, and graph-grounded answer prompts.
+
+Run the pipeline with a selected LLM backend:
 
 ```bash
 uv run python -m hirag_ontology.cli run-demo \
@@ -242,6 +292,71 @@ uv run python -m hirag_ontology.cli ask \
   --query "How is Ph+ ALL treated?" \
   --llm gemma
 ```
+
+## Evaluation
+
+The repository includes an evaluation suite in the same spirit as
+`ekaesha/hirag-ontology`: retrieval metrics, generation metrics, latency
+measurement, and deduplication ablation. The default 50-question benchmark
+annotations live in:
+
+```text
+evaluation/ground_truth.json
+```
+
+Run the full deterministic evaluation suite against the bundled graph:
+
+```bash
+uv run python -m hirag_ontology.cli evaluate \
+  --kg results/knowledge_graph_full_gemma.json \
+  --gt evaluation/ground_truth.json \
+  --out-dir results
+```
+
+This writes reproducible JSON artifacts:
+
+```text
+results/retrieval_metrics.json
+results/retrieval_metrics_per_question.json
+results/generation_metrics.json
+results/generation_metrics_per_question.json
+results/latency_results.json
+results/dedup_ablation.json
+results/full_evaluation_report.json
+results/evaluation_report.md
+```
+
+The default generation evaluation is graph-only and deterministic, so it does
+not call Ollama. LLM-as-judge helpers are available in
+`src/hirag_ontology/evaluation/llm_judge.py`, but tests do not require a live
+model.
+
+You can run individual evaluation modules too:
+
+```bash
+uv run python -m hirag_ontology.evaluation.retrieval_eval \
+  --kg results/knowledge_graph_full_gemma.json \
+  --gt evaluation/ground_truth.json \
+  --top-k 10
+
+uv run python -m hirag_ontology.evaluation.generation_eval \
+  --kg results/knowledge_graph_full_gemma.json \
+  --gt evaluation/ground_truth.json \
+  --mode lexical_structural
+
+uv run python -m hirag_ontology.evaluation.latency_eval \
+  --kg results/knowledge_graph_full_gemma.json \
+  --gt evaluation/ground_truth.json \
+  --n-queries 20
+
+uv run python -m hirag_ontology.evaluation.dedup_ablation \
+  --kg results/knowledge_graph_full_gemma.json
+```
+
+The included ground truth is a 50-question benchmark whose
+`relevant_entity_labels` are checked against the bundled graph labels and
+aliases. Treat it as reproducible MVP evaluation; add external clinical review
+before using the numbers as clinical-quality evidence.
 
 ## Safety
 

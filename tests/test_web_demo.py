@@ -1,3 +1,4 @@
+import hirag_ontology.app.web_demo as web_demo
 from hirag_ontology.app.web_demo import (
     ask_payload,
     dashboard_payload,
@@ -6,6 +7,7 @@ from hirag_ontology.app.web_demo import (
     search_entities_payload,
     subgraph_payload,
 )
+from hirag_ontology.llm import FakeLLMClient
 from hirag_ontology.pipeline.knowledge_graph import Entity, KnowledgeGraph
 
 
@@ -49,6 +51,8 @@ def test_web_dashboard_payload_contains_counts_and_validation(tmp_path) -> None:
     assert payload["top_predicates"][0]["predicate"] in {"diagnosed_by", "treats"}
     assert payload["top_by_degree"]
     assert payload["top_by_pagerank"]
+    assert "openai" in payload["answer_llms"]
+    assert "deepseek" in payload["pipeline_llms"]
 
 
 def test_web_entity_search_filters_by_type(tmp_path) -> None:
@@ -96,6 +100,31 @@ def test_web_ask_payload_uses_deterministic_mode_without_llm(tmp_path) -> None:
     assert payload["diagnostics"]["retrieval_mode"] == "lexical_only"
     assert payload["context_relations"]
     assert "Graph Context" not in payload["graph_context"]
+
+
+def test_web_ask_payload_can_use_remote_llm_choice(tmp_path, monkeypatch) -> None:
+    graph_path, _ = _graph_path(tmp_path)
+
+    monkeypatch.setattr(
+        web_demo,
+        "_build_chat_client",
+        lambda llm: FakeLLMClient(
+            text_responses={
+                "Use only the provided graph context.": f"Answer from {llm}."
+            }
+        ),
+    )
+
+    payload = ask_payload(
+        graph_path=graph_path,
+        query="How is Ph+ ALL treated?",
+        retrieval_mode="lexical_only",
+        top_k=2,
+        llm="openai",
+    )
+
+    assert payload["answer"] == "Answer from openai."
+    assert payload["diagnostics"]["llm"] == "openai"
 
 
 def test_web_retrieval_compare_payload_returns_modes(tmp_path) -> None:

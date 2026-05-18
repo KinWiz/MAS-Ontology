@@ -64,6 +64,8 @@
                   Answer
                   <select id="llmMode">
                     <option value="gemma">Gemma</option>
+                    <option value="openai">ChatGPT API</option>
+                    <option value="deepseek">DeepSeek API</option>
                     <option value="deterministic">Deterministic</option>
                   </select>
                 </label>
@@ -252,6 +254,14 @@
           </div>
           <form id="pipelineForm" class="pipeline-form">
             <input id="documentInput" type="file" accept=".md,text/markdown" multiple />
+            <label>
+              LLM
+              <select id="pipelineLlmMode">
+                <option value="gemma">Gemma</option>
+                <option value="openai">ChatGPT API</option>
+                <option value="deepseek">DeepSeek API</option>
+              </select>
+            </label>
             <input
               id="pipelineOutPath"
               type="text"

@@ -31,6 +31,33 @@ class GemmaSettings:
 
 
 @dataclass(frozen=True)
+class ChatAPISettings:
+    """OpenAI-compatible remote chat API settings."""
+
+    provider: str
+    model: str
+    base_url: str
+    api_key: str
+    max_retries: int
+    min_request_interval_seconds: float
+    temperature: float | None
+    request_timeout_seconds: float
+
+    def __repr__(self) -> str:
+        return (
+            "ChatAPISettings("
+            f"provider={self.provider!r}, "
+            f"model={self.model!r}, "
+            f"base_url={self.base_url!r}, "
+            f"api_key={'<set>' if self.api_key else '<empty>'}, "
+            f"max_retries={self.max_retries!r}, "
+            f"min_request_interval_seconds={self.min_request_interval_seconds!r}, "
+            f"temperature={self.temperature!r}, "
+            f"request_timeout_seconds={self.request_timeout_seconds!r})"
+        )
+
+
+@dataclass(frozen=True)
 class Neo4jSettings:
     """Optional Neo4j runtime settings."""
 
@@ -89,6 +116,28 @@ def load_gemma_settings(env_path: str | Path = ".env") -> GemmaSettings:
     )
 
 
+def load_openai_settings(env_path: str | Path = ".env") -> ChatAPISettings:
+    """Load OpenAI ChatGPT API settings from .env and the current environment."""
+    return _load_chat_api_settings(
+        env_path=env_path,
+        provider="openai",
+        prefix="OPENAI",
+        default_base_url="https://api.openai.com/v1",
+        default_model="gpt-4o-mini",
+    )
+
+
+def load_deepseek_settings(env_path: str | Path = ".env") -> ChatAPISettings:
+    """Load DeepSeek API settings from .env and the current environment."""
+    return _load_chat_api_settings(
+        env_path=env_path,
+        provider="deepseek",
+        prefix="DEEPSEEK",
+        default_base_url="https://api.deepseek.com",
+        default_model="deepseek-chat",
+    )
+
+
 def load_neo4j_settings(env_path: str | Path = ".env") -> Neo4jSettings:
     """Load optional Neo4j settings from .env and the current environment."""
     load_dotenv(env_path)
@@ -108,6 +157,35 @@ def _clean_env_value(value: str) -> str:
     return cleaned
 
 
+def _load_chat_api_settings(
+    *,
+    env_path: str | Path,
+    provider: str,
+    prefix: str,
+    default_base_url: str,
+    default_model: str,
+) -> ChatAPISettings:
+    load_dotenv(env_path)
+    model = os.getenv(f"{prefix}_MODEL", default_model).strip() or default_model
+    base_url = os.getenv(f"{prefix}_BASE_URL", default_base_url).strip()
+    return ChatAPISettings(
+        provider=provider,
+        model=model,
+        base_url=base_url.rstrip("/"),
+        api_key=os.getenv(f"{prefix}_API_KEY", "").strip(),
+        max_retries=_get_int_env(f"{prefix}_MAX_RETRIES", default=2),
+        min_request_interval_seconds=_get_float_env(
+            f"{prefix}_MIN_REQUEST_INTERVAL_SECONDS",
+            default=0.5,
+        ),
+        temperature=_get_optional_float_env(f"{prefix}_TEMPERATURE"),
+        request_timeout_seconds=_get_float_env(
+            f"{prefix}_REQUEST_TIMEOUT_SECONDS",
+            default=120.0,
+        ),
+    )
+
+
 def _get_int_env(name: str, *, default: int) -> int:
     raw_value = os.getenv(name, "").strip()
     if not raw_value:
@@ -116,6 +194,17 @@ def _get_int_env(name: str, *, default: int) -> int:
         return int(raw_value)
     except ValueError as error:
         msg = f"{name} must be an integer."
+        raise ValueError(msg) from error
+
+
+def _get_optional_float_env(name: str) -> float | None:
+    raw_value = os.getenv(name, "").strip()
+    if not raw_value:
+        return None
+    try:
+        return float(raw_value)
+    except ValueError as error:
+        msg = f"{name} must be a number."
         raise ValueError(msg) from error
 
 

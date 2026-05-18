@@ -14,3 +14,11 @@ src/results/
 results/*
 !results/.gitkeep
 !results/knowledge_graph_full_gemma.json
+!results/retrieval_metrics.json
+!results/retrieval_metrics_per_question.json
+!results/generation_metrics.json
+!results/generation_metrics_per_question.json
+!results/latency_results.json
+!results/dedup_ablation.json
+!results/full_evaluation_report.json
+!results/evaluation_report.md

@@ -83,6 +83,8 @@ async function loadDashboard() {
   renderRankList("#topDegree", data.top_by_degree, "degree");
   renderRankList("#topPagerank", data.top_by_pagerank, "pagerank");
   fillSelect("#retrievalMode", data.retrieval_modes, "lexical_structural");
+  fillSelect("#llmMode", data.answer_llms || ["gemma", "openai", "deepseek", "deterministic"], "gemma");
+  fillSelect("#pipelineLlmMode", data.pipeline_llms || ["gemma", "openai", "deepseek"], "gemma");
   fillSelect("#entityTypeFilter", ["", ...data.entity_types], "");
   fillSelect("#predicateFilter", ["", ...data.predicates], "");
   await searchEntities(true);
@@ -542,6 +544,7 @@ async function submitPipeline(event) {
   const job = await apiPost("/api/pipeline/jobs", {
     documents,
     out_path: qs("#pipelineOutPath").value,
+    llm: qs("#pipelineLlmMode").value,
   });
   state.pipelineJobId = job.id;
   renderPipelineJob(job);
@@ -579,6 +582,7 @@ function renderPipelineJob(job) {
   if (job.summary) {
     renderKeyValues("#pipelineSummary", {
       documents: job.summary.documents_processed,
+      llm: job.summary.llm || job.llm,
       chunks: job.summary.chunks_processed,
       entities_raw: job.summary.entity_count_raw,
       relations_raw: job.summary.relation_count_raw,

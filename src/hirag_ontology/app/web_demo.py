@@ -19,8 +19,13 @@ from uuid import uuid4
 
 import networkx as nx
 
-from hirag_ontology.config import load_gemma_settings, load_neo4j_settings
-from hirag_ontology.llm import GemmaOllamaClient, LLMClient
+from hirag_ontology.config import load_neo4j_settings
+from hirag_ontology.llm import (
+    SUPPORTED_ANSWER_BACKENDS,
+    SUPPORTED_LLM_BACKENDS,
+    LLMClient,
+    build_llm_client,
+)
 from hirag_ontology.ontology import load_ontology
 from hirag_ontology.pipeline.chunking import load_markdown_chunks
 from hirag_ontology.pipeline.deduplication import DeduplicationAgent
@@ -71,6 +76,7 @@ class PipelineJob:
     status: str
     stages: list[PipelineStage]
     graph_path: str
+    llm: str = "gemma"
     created_at: float = field(default_factory=time.time)
     updated_at: float = field(default_factory=time.time)
     summary: dict[str, Any] | None = None
@@ -234,6 +240,7 @@ def create_server(
                                 / "results"
                                 / f"web_pipeline_{uuid4().hex[:8]}.json",
                             ),
+                            llm=str(body.get("llm", "gemma")),
                         ),
                         status=HTTPStatus.ACCEPTED,
                     )
@@ -359,6 +366,8 @@ def dashboard_payload(graph_path: str | Path) -> dict[str, Any]:
         "entity_types": sorted(type_distribution),
         "predicates": sorted({relation.predicate for relation in kg.relations}),
         "retrieval_modes": [mode.value for mode in RetrievalMode],
+        "answer_llms": list(SUPPORTED_ANSWER_BACKENDS),
+        "pipeline_llms": list(SUPPORTED_LLM_BACKENDS),
     }
 
 
@@ -460,9 +469,9 @@ def ask_payload(
     graph_context = build_graph_context(kg, retrieved, query=query)
 
     answer_started = time.perf_counter()
-    if llm == "gemma":
+    if llm in SUPPORTED_LLM_BACKENDS:
         answer = answer_from_graph_context(
-            _build_gemma_client(),
+            _build_chat_client(llm),
             query=query,
             graph_context=graph_context,
         )
@@ -473,7 +482,7 @@ def ask_payload(
             retrieved=retrieved,
         )
     else:
-        msg = "llm must be gemma or deterministic."
+        msg = f"llm must be one of: {', '.join(SUPPORTED_ANSWER_BACKENDS)}."
         raise ValueError(msg)
     answer_elapsed = time.perf_counter() - answer_started
     context_relations = _context_relation_payloads(kg, retrieved, limit=15)
@@ -611,10 +620,14 @@ def create_pipeline_job(
     *,
     documents: list[dict[str, str]],
     out_path: str | Path,
+    llm: str = "gemma",
 ) -> dict[str, Any]:
     """Create and start a background pipeline job."""
     if not documents:
         msg = "At least one Markdown document is required."
+        raise ValueError(msg)
+    if llm not in SUPPORTED_LLM_BACKENDS:
+        msg = f"llm must be one of: {', '.join(SUPPORTED_LLM_BACKENDS)}."
         raise ValueError(msg)
 
     job_id = uuid4().hex
@@ -623,13 +636,14 @@ def create_pipeline_job(
         status="queued",
         stages=_pipeline_stages(),
         graph_path=str(out_path),
+        llm=llm,
     )
     with _jobs_lock:
         _jobs[job_id] = job
 
     thread = threading.Thread(
         target=_run_pipeline_job,
-        args=(job_id, documents, Path(out_path)),
+        args=(job_id, documents, Path(out_path), llm),
         daemon=True,
     )
     thread.start()
@@ -647,6 +661,7 @@ def job_payload(job_id: str) -> dict[str, Any]:
             "id": job.id,
             "status": job.status,
             "graph_path": job.graph_path,
+            "llm": job.llm,
             "created_at": job.created_at,
             "updated_at": job.updated_at,
             "stages": [asdict(stage) for stage in job.stages],
@@ -712,6 +727,7 @@ def _run_pipeline_job(
     job_id: str,
     documents: list[dict[str, str]],
     out_path: Path,
+    llm: str,
 ) -> None:
     _set_job_status(job_id, "running")
     try:
@@ -725,6 +741,7 @@ def _run_pipeline_job(
             job_id=job_id,
             input_dir=input_dir,
             out_path=out_path,
+            llm=llm,
         )
         _set_job_summary(job_id, summary)
         _set_job_status(job_id, "completed")
@@ -738,11 +755,12 @@ def _run_pipeline_with_progress(
     job_id: str,
     input_dir: Path,
     out_path: Path,
+    llm: str,
 ) -> dict[str, Any]:
     ontology = load_ontology()
     output_path = Path(out_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    cache_root = output_path.parent / ".cache" / "hirag_web" / job_id
+    cache_root = output_path.parent / ".cache" / "hirag_web" / llm / job_id
 
     _set_stage(job_id, "A1", "running", "Loading Markdown documents")
     chunks = load_markdown_chunks(input_dir)
@@ -758,7 +776,7 @@ def _run_pipeline_with_progress(
 
     kg = KnowledgeGraph()
     _set_stage(job_id, "A2", "running", "Extracting entities and relations")
-    llm_client = _build_gemma_client()
+    llm_client = _build_chat_client(llm)
     extractor = ExtractionAgent(
         llm_client,
         ontology=ontology,
@@ -782,7 +800,7 @@ def _run_pipeline_with_progress(
         ontology=ontology,
         cache_dir=cache_root / "typing",
     ).type_graph(kg)
-    _set_stage(job_id, "A3", "completed", f"{typing_stats['typed_entities']} typed")
+    _set_stage(job_id, "A3", "completed", f"{typing_stats['typed_count']} typed")
 
     _set_stage(job_id, "A4", "running", "Deduplicating entities")
     dedup_result = DeduplicationAgent().deduplicate(kg)
@@ -813,6 +831,7 @@ def _run_pipeline_with_progress(
     summary_path = output_path.with_name("run_summary.json")
     summary = {
         "documents_processed": len({chunk.document_id for chunk in chunks}),
+        "llm": llm,
         "chunks_processed": len(chunks),
         "entity_count_raw": raw_entity_count,
         "relation_count_raw": raw_relation_count,
@@ -897,16 +916,8 @@ def _set_stage(job_id: str, stage_id: str, status: str, detail: str) -> None:
         job.updated_at = time.time()
 
 
-def _build_gemma_client() -> LLMClient:
-    settings = load_gemma_settings()
-    return GemmaOllamaClient(
-        model=settings.model,
-        base_url=settings.base_url,
-        temperature=settings.temperature,
-        max_retries=settings.max_retries,
-        min_request_interval_seconds=settings.min_request_interval_seconds,
-        request_timeout_seconds=settings.request_timeout_seconds,
-    )
+def _build_chat_client(llm: str) -> LLMClient:
+    return build_llm_client(llm)
 
 
 def _web_embedding_provider() -> Any:

@@ -1,0 +1,216 @@
+{
+  "kg_path": "results\\knowledge_graph_full_gemma.json",
+  "gt_path": "evaluation\\ground_truth.json",
+  "n_queries": 20,
+  "top_k": 10,
+  "retrieval_mode": "lexical_structural",
+  "answer_mode": "deterministic",
+  "aggregated": {
+    "retrieval_s": {
+      "mean": 0.2563650350057287,
+      "std": 0.01140232608635857,
+      "min": 0.2419155000243336,
+      "max": 0.2848762000212446
+    },
+    "context_format_s": {
+      "mean": 0.0009669049963122234,
+      "std": 0.00022994401645516166,
+      "min": 0.0006745000137016177,
+      "max": 0.0017946999869309366
+    },
+    "generation_s": {
+      "mean": 4.880998749285936e-05,
+      "std": 1.1042878961443197e-05,
+      "min": 2.8999987989664078e-05,
+      "max": 7.760000880807638e-05
+    },
+    "total_s": {
+      "mean": 0.2573807499895338,
+      "std": 0.01149756266363287,
+      "min": 0.24287179997190833,
+      "max": 0.2867485000169836
+    }
+  },
+  "per_query": [
+    {
+      "question": "Какой протокол и лечение используются при ОПЛ?",
+      "retrieval_s": 0.2561170000117272,
+      "context_format_s": 0.0010029000113718212,
+      "generation_s": 5.519995465874672e-05,
+      "total_s": 0.2571750999777578,
+      "n_entities_retrieved": 10,
+      "answer_length_chars": 702
+    },
+    {
+      "question": "Как лечить острый лимфобластный лейкоз у детей?",
+      "retrieval_s": 0.24936860002344474,
+      "context_format_s": 0.0010271999635733664,
+      "generation_s": 4.770001396536827e-05,
+      "total_s": 0.2504435000009835,
+      "n_entities_retrieved": 10,
+      "answer_length_chars": 552
+    },
+    {
+      "question": "Чем отличается лечение Ph-позитивного ОЛЛ при BCR-ABL1?",
+      "retrieval_s": 0.2651620000251569,
+      "context_format_s": 0.0008154999813996255,
+      "generation_s": 3.5999983083456755e-05,
+      "total_s": 0.26601349998963997,
+      "n_entities_retrieved": 10,
+      "answer_length_chars": 722
+    },
+    {
+      "question": "Как оценивают минимальную остаточную болезнь при ОЛЛ?",
+      "retrieval_s": 0.2419155000243336,
+      "context_format_s": 0.0009064999758265913,
+      "generation_s": 4.9799971748143435e-05,
+      "total_s": 0.24287179997190833,
+      "n_entities_retrieved": 10,
+      "answer_length_chars": 544
+    },
+    {
+      "question": "Какие методы используются для подтверждения BCR-ABL1?",
+      "retrieval_s": 0.25486050004838035,
+      "context_format_s": 0.0009005999891087413,
+      "generation_s": 3.940000897273421e-05,
+      "total_s": 0.2558005000464618,
+      "n_entities_retrieved": 10,
+      "answer_length_chars": 722
+    },
+    {
+      "question": "Какова роль трансплантации при острых лейкозах?",
+      "retrieval_s": 0.2621237999992445,
+      "context_format_s": 0.0006745000137016177,
+      "generation_s": 3.349996404722333e-05,
+      "total_s": 0.26283179997699335,
+      "n_entities_retrieved": 10,
+      "answer_length_chars": 753
+    },
+    {
+      "question": "Как лечится острый миелоидный лейкоз?",
+      "retrieval_s": 0.24215239996556193,
+      "context_format_s": 0.0008957000100053847,
+      "generation_s": 4.4899992644786835e-05,
+      "total_s": 0.2430929999682121,
+      "n_entities_retrieved": 10,
+      "answer_length_chars": 682
+    },
+    {
+      "question": "Как используется венетоклакс при ОМЛ?",
+      "retrieval_s": 0.24237609998090193,
+      "context_format_s": 0.0007837000302970409,
+      "generation_s": 4.869996337220073e-05,
+      "total_s": 0.24320849997457117,
+      "n_entities_retrieved": 10,
+      "answer_length_chars": 581
+    },
+    {
+      "question": "Какие препараты связаны с лечением ОЛЛ?",
+      "retrieval_s": 0.25412590004270896,
+      "context_format_s": 0.001124400005210191,
+      "generation_s": 4.629994509741664e-05,
+      "total_s": 0.25529659999301657,
+      "n_entities_retrieved": 10,
+      "answer_length_chars": 562
+    },
+    {
+      "question": "Какие осложнения важны при терапии ОЛЛ?",
+      "retrieval_s": 0.250317600031849,
+      "context_format_s": 0.0010002999915741384,
+      "generation_s": 4.6200002543628216e-05,
+      "total_s": 0.25136410002596676,
+      "n_entities_retrieved": 10,
+      "answer_length_chars": 561
+    },
+    {
+      "question": "Какая терапия используется при агрессивных нефолликулярных лимфомах?",
+      "retrieval_s": 0.27612569998018444,
+      "context_format_s": 0.0009140000329352915,
+      "generation_s": 7.019995246082544e-05,
+      "total_s": 0.27710989996558055,
+      "n_entities_retrieved": 10,
+      "answer_length_chars": 829
+    },
+    {
+      "question": "Как оценивают лимфомы с помощью ПЭТ/КТ?",
+      "retrieval_s": 0.25712369999382645,
+      "context_format_s": 0.0008296999731101096,
+      "generation_s": 4.9900030717253685e-05,
+      "total_s": 0.2580032999976538,
+      "n_entities_retrieved": 10,
+      "answer_length_chars": 766
+    },
+    {
+      "question": "Какие варианты лечения используются при раке коры надпочечника?",
+      "retrieval_s": 0.26251969998702407,
+      "context_format_s": 0.0009608999826014042,
+      "generation_s": 4.600000102072954e-05,
+      "total_s": 0.2635265999706462,
+      "n_entities_retrieved": 10,
+      "answer_length_chars": 722
+    },
+    {
+      "question": "Как лечится рак анального канала?",
+      "retrieval_s": 0.24645640002563596,
+      "context_format_s": 0.001039499999023974,
+      "generation_s": 4.7799956519156694e-05,
+      "total_s": 0.2475436999811791,
+      "n_entities_retrieved": 10,
+      "answer_length_chars": 893
+    },
+    {
+      "question": "Что используется при раке билиарного тракта?",
+      "retrieval_s": 0.2509008999913931,
+      "context_format_s": 0.0009034000104293227,
+      "generation_s": 5.099998088553548e-05,
+      "total_s": 0.25185529998270795,
+      "n_entities_retrieved": 10,
+      "answer_length_chars": 877
+    },
+    {
+      "question": "Какие подходы применяются при базальноклеточном раке кожи?",
+      "retrieval_s": 0.2848762000212446,
+      "context_format_s": 0.0017946999869309366,
+      "generation_s": 7.760000880807638e-05,
+      "total_s": 0.2867485000169836,
+      "n_entities_retrieved": 10,
+      "answer_length_chars": 779
+    },
+    {
+      "question": "Какие методы диагностики используются в онкологических рекомендациях?",
+      "retrieval_s": 0.26956019998760894,
+      "context_format_s": 0.0007199000101536512,
+      "generation_s": 2.8999987989664078e-05,
+      "total_s": 0.27030909998575225,
+      "n_entities_retrieved": 10,
+      "answer_length_chars": 889
+    },
+    {
+      "question": "Какую роль играют общий и биохимический анализы крови?",
+      "retrieval_s": 0.258013199956622,
+      "context_format_s": 0.0011571000213734806,
+      "generation_s": 5.1099981646984816e-05,
+      "total_s": 0.25922139995964244,
+      "n_entities_retrieved": 10,
+      "answer_length_chars": 908
+    },
+    {
+      "question": "Как связаны нейролейкемия и поражение ЦНС при ОЛЛ?",
+      "retrieval_s": 0.25744670000858605,
+      "context_format_s": 0.0008979999693110585,
+      "generation_s": 5.6500022765249014e-05,
+      "total_s": 0.25840120000066236,
+      "n_entities_retrieved": 10,
+      "answer_length_chars": 544
+    },
+    {
+      "question": "Какие сущности связаны с полной ремиссией при ОЛЛ?",
+      "retrieval_s": 0.24575860000913963,
+      "context_format_s": 0.0009895999683067203,
+      "generation_s": 4.9400026910007e-05,
+      "total_s": 0.24679760000435635,
+      "n_entities_retrieved": 10,
+      "answer_length_chars": 554
+    }
+  ]
+}

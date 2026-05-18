@@ -34,6 +34,18 @@ def test_parser_accepts_gemma_runtime() -> None:
     assert ask_args.llm == "gemma"
 
 
+def test_parser_accepts_remote_llm_runtime_choices() -> None:
+    parser = build_parser()
+
+    run_demo_args = parser.parse_args(["run-demo", "--llm", "openai"])
+    ask_args = parser.parse_args(
+        ["ask", "--query", "How is Ph+ ALL treated?", "--llm", "deepseek"]
+    )
+
+    assert run_demo_args.llm == "openai"
+    assert ask_args.llm == "deepseek"
+
+
 def test_parser_exposes_ask_defaults() -> None:
     parser = build_parser()
 
@@ -71,6 +83,23 @@ def test_parser_exposes_web_defaults() -> None:
     assert args.host == "127.0.0.1"
     assert args.port == 8765
     assert args.graph == "results/knowledge_graph_full_gemma.json"
+
+
+def test_parser_exposes_evaluate_defaults() -> None:
+    parser = build_parser()
+
+    args = parser.parse_args(["evaluate"])
+
+    assert args.command == "evaluate"
+    assert args.kg == "results/knowledge_graph_full_gemma.json"
+    assert args.gt == "evaluation/ground_truth.json"
+    assert args.out_dir == "results"
+    assert args.top_k == 10
+    assert args.n_latency == 20
+    assert args.n_generation is None
+    assert args.skip_generation is False
+    assert args.skip_dedup is False
+    assert args.apply_dedup_ablation is False
 
 
 def test_graph_stats_command_prints_json_graph_stats(tmp_path, capsys) -> None:
