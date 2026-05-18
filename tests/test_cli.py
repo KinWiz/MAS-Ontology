@@ -57,6 +57,7 @@ def test_parser_exposes_ask_defaults() -> None:
     assert args.llm == "gemma"
     assert args.top_k == 5
     assert args.retrieval_mode == "lexical_structural"
+    assert args.embedding_provider == "demo"
     assert args.show_context is False
 
 
@@ -99,7 +100,9 @@ def test_parser_exposes_evaluate_defaults() -> None:
     assert args.n_generation is None
     assert args.skip_generation is False
     assert args.skip_dedup is False
+    assert args.skip_baselines is False
     assert args.apply_dedup_ablation is False
+    assert args.embedding_provider == "demo"
 
 
 def test_graph_stats_command_prints_json_graph_stats(tmp_path, capsys) -> None:

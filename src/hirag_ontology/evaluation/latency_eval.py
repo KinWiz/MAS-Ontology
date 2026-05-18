@@ -18,7 +18,11 @@ from hirag_ontology.retrieval.answering import (
     build_graph_context,
     deterministic_answer_from_graph_context,
 )
-from hirag_ontology.retrieval.retriever import HybridRetriever, RetrievalMode
+from hirag_ontology.retrieval.retriever import (
+    EmbeddingProvider,
+    HybridRetriever,
+    RetrievalMode,
+)
 
 
 def measure_single_query(
@@ -29,11 +33,12 @@ def measure_single_query(
     retrieval_mode: RetrievalMode = RetrievalMode.LEXICAL_STRUCTURAL,
     answer_mode: str = "deterministic",
     llm_client: LLMClient | None = None,
+    embedding_provider: EmbeddingProvider | None = None,
 ) -> dict[str, Any]:
     """Measure one end-to-end question-answering pass."""
     retriever = HybridRetriever(
         kg,
-        demo_embedding_provider(),
+        embedding_provider or demo_embedding_provider(),
         mode=retrieval_mode,
     )
 
@@ -83,6 +88,7 @@ def run_latency_eval(
     retrieval_mode: RetrievalMode = RetrievalMode.LEXICAL_STRUCTURAL,
     answer_mode: str = "deterministic",
     llm_client: LLMClient | None = None,
+    embedding_provider: EmbeddingProvider | None = None,
 ) -> dict[str, Any]:
     """Run latency benchmark over the first N benchmark questions."""
     kg = KnowledgeGraph.load(kg_path)
@@ -95,6 +101,7 @@ def run_latency_eval(
             retrieval_mode=retrieval_mode,
             answer_mode=answer_mode,
             llm_client=llm_client,
+            embedding_provider=embedding_provider,
         )
         for question in questions
     ]

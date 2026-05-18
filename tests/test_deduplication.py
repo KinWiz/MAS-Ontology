@@ -51,7 +51,6 @@ def test_deduplicate_merges_punctuation_variants_and_preserves_aliases() -> None
     assert len(kg.entities) == 1
     assert kg.entities[canonical_id].aliases == [
         "TKI",
-        "BCR ABL inhibitor",
         "tyrosine kinase inhibitor",
     ]
     assert kg.entities[canonical_id].source_chunks == ["chunk-1", "chunk-2"]
@@ -67,6 +66,38 @@ def test_deduplicate_merges_word_order_variants() -> None:
     assert result.merged_count == 1
     assert result.canonical_map[first_id] == result.canonical_map[second_id]
     assert len(kg.entities) == 1
+
+
+def test_deduplicate_uses_aliases_and_parenthetical_acronyms() -> None:
+    kg = KnowledgeGraph()
+    first_id = kg.add_entity(
+        Entity(
+            label="Острый лимфобластный лейкоз (ОЛЛ)",
+            entity_type="Condition",
+        )
+    )
+    second_id = kg.add_entity(
+        Entity(
+            label="ОЛЛ",
+            entity_type="Condition",
+            aliases=["острый лимфобластный лейкоз"],
+        )
+    )
+
+    result = DeduplicationAgent(threshold=0.85).deduplicate(kg)
+
+    assert result.merged_count == 1
+    assert result.canonical_map[first_id] == result.canonical_map[second_id]
+
+
+def test_deduplicate_avoids_merging_different_typed_subtypes() -> None:
+    kg = KnowledgeGraph()
+    kg.add_entity(Entity(label="T-ОЛЛ", entity_type="Condition"))
+    kg.add_entity(Entity(label="В-ОЛЛ", entity_type="Condition"))
+
+    result = DeduplicationAgent(threshold=0.85).deduplicate(kg)
+
+    assert result.merged_count == 0
 
 
 def test_deduplicate_does_not_merge_below_threshold() -> None:

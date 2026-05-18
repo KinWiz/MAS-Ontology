@@ -8,6 +8,8 @@ from hirag_ontology.pipeline.knowledge_graph import (
 from hirag_ontology.retrieval.retriever import (
     FakeEmbeddingProvider,
     HybridRetriever,
+    OllamaEmbeddingProvider,
+    OpenAIEmbeddingProvider,
     RetrievalMode,
     bm25_scores,
     expand_text_for_retrieval,
@@ -237,6 +239,42 @@ def test_fake_embedding_provider_uses_configured_vectors() -> None:
 
     assert vector == pytest.approx([0.6, 0.8])
     assert provider.calls == [["imatinib"]]
+
+
+def test_openai_embedding_provider_parses_indexed_response(monkeypatch) -> None:
+    provider = OpenAIEmbeddingProvider(
+        model="embedding-model",
+        base_url="https://example.test/v1",
+        api_key="secret",
+    )
+
+    monkeypatch.setattr(
+        provider,
+        "_post_json",
+        lambda url, payload, headers=None: {
+            "data": [
+                {"index": 1, "embedding": [0.0, 2.0]},
+                {"index": 0, "embedding": [3.0, 4.0]},
+            ]
+        },
+    )
+
+    vectors = provider.encode(["first", "second"])
+
+    assert vectors[0] == pytest.approx([0.6, 0.8])
+    assert vectors[1] == pytest.approx([0.0, 1.0])
+
+
+def test_ollama_embedding_provider_parses_local_response(monkeypatch) -> None:
+    provider = OllamaEmbeddingProvider(model="mxbai-embed-large")
+
+    monkeypatch.setattr(
+        provider,
+        "_post_json",
+        lambda url, payload: {"embedding": [0.0, 5.0]},
+    )
+
+    assert provider.encode(["тест"])[0] == pytest.approx([0.0, 1.0])
 
 
 def test_retrieved_entity_ids_are_expected() -> None:

@@ -198,6 +198,12 @@ signal. Pipeline runs can use Gemma, OpenAI, or DeepSeek and may take a long
 time on large document sets. Neo4j import requires `NEO4J_PASSWORD` in `.env`
 and the optional Neo4j package.
 
+Semantic and hybrid retrieval can optionally use real multilingual embeddings.
+The default `demo` provider remains deterministic for tests. Set
+`EMBEDDING_PROVIDER=ollama` with a local embedding model such as
+`mxbai-embed-large`, or `EMBEDDING_PROVIDER=openai` with an OpenAI-compatible
+`/embeddings` endpoint. Runtime logs and errors never print embedding API keys.
+
 ## Local Gemma 4 Runtime
 
 Gemma calls are local and never used by tests. Install Ollama, pull Gemma 4,
@@ -318,6 +324,8 @@ This writes reproducible JSON artifacts:
 ```text
 results/retrieval_metrics.json
 results/retrieval_metrics_per_question.json
+results/baseline_metrics.json
+results/baseline_metrics_per_question.json
 results/generation_metrics.json
 results/generation_metrics_per_question.json
 results/latency_results.json

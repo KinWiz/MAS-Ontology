@@ -12,12 +12,16 @@ from hirag_ontology.config import load_neo4j_settings
 from hirag_ontology.evaluation.run_full_eval import run_full_evaluation
 from hirag_ontology.llm import SUPPORTED_LLM_BACKENDS, LLMClient, build_llm_client
 from hirag_ontology.pipeline.knowledge_graph import KnowledgeGraph
-from hirag_ontology.pipeline.runner import demo_embedding_provider, run_demo_pipeline
+from hirag_ontology.pipeline.runner import run_demo_pipeline
 from hirag_ontology.retrieval.answering import (
     answer_from_graph_context,
     build_graph_context,
 )
-from hirag_ontology.retrieval.retriever import HybridRetriever, RetrievalMode
+from hirag_ontology.retrieval.retriever import (
+    HybridRetriever,
+    RetrievalMode,
+    build_embedding_provider,
+)
 from hirag_ontology.storage import JsonGraphStore, Neo4jGraphStore
 
 
@@ -87,6 +91,12 @@ def build_parser() -> argparse.ArgumentParser:
         choices=tuple(mode.value for mode in RetrievalMode),
         default=RetrievalMode.LEXICAL_STRUCTURAL.value,
         help="Retrieval mode for selecting graph entities.",
+    )
+    ask.add_argument(
+        "--embedding-provider",
+        choices=("demo", "auto", "openai", "ollama"),
+        default="demo",
+        help="Embedding provider for semantic and hybrid retrieval.",
     )
     ask.add_argument(
         "--show-context",
@@ -208,6 +218,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="Skip deduplication ablation.",
     )
     evaluate.add_argument(
+        "--skip-baselines",
+        action="store_true",
+        help="Skip Naive RAG vs HiRAG vs HiRAG-Ontology comparison.",
+    )
+    evaluate.add_argument(
+        "--embedding-provider",
+        choices=("demo", "auto", "openai", "ollama"),
+        default="demo",
+        help="Embedding provider for semantic and hybrid retrieval.",
+    )
+    evaluate.add_argument(
         "--apply-dedup-ablation",
         action="store_true",
         help="Apply each dedup config to a graph copy during ablation.",
@@ -250,7 +271,7 @@ def run_ask(args: argparse.Namespace) -> int:
         kg = KnowledgeGraph.load(args.graph)
         retrieved = HybridRetriever(
             kg,
-            demo_embedding_provider(),
+            build_embedding_provider(args.embedding_provider),
             mode=RetrievalMode(args.retrieval_mode),
         ).retrieve(args.query, top_k=args.top_k)
         graph_context = build_graph_context(kg, retrieved, query=args.query)
@@ -344,7 +365,9 @@ def run_evaluate(args: argparse.Namespace) -> int:
             n_generation=args.n_generation,
             skip_generation=args.skip_generation,
             skip_dedup=args.skip_dedup,
+            skip_baselines=args.skip_baselines,
             apply_dedup_ablation=args.apply_dedup_ablation,
+            embedding_provider=build_embedding_provider(args.embedding_provider),
         )
     except (FileNotFoundError, RuntimeError, ValueError) as error:
         print(f"error: {error}")

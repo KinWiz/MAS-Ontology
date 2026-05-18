@@ -39,7 +39,11 @@ from hirag_ontology.retrieval.answering import (
     build_graph_context,
     deterministic_answer_from_graph_context,
 )
-from hirag_ontology.retrieval.retriever import HybridRetriever, RetrievalMode
+from hirag_ontology.retrieval.retriever import (
+    HybridRetriever,
+    RetrievalMode,
+    build_embedding_provider,
+)
 from hirag_ontology.storage import Neo4jGraphStore
 
 logger = logging.getLogger(__name__)
@@ -195,6 +199,9 @@ def create_server(
                             ),
                             top_k=_safe_int(body.get("top_k"), default=5),
                             llm=str(body.get("llm", "gemma")),
+                            embedding_provider=str(
+                                body.get("embedding_provider", "demo")
+                            ),
                         )
                     )
                     return
@@ -227,6 +234,9 @@ def create_server(
                             ),
                             query=str(body.get("query", "")),
                             top_k=_safe_int(body.get("top_k"), default=5),
+                            embedding_provider=str(
+                                body.get("embedding_provider", "demo")
+                            ),
                         )
                     )
                     return
@@ -368,6 +378,7 @@ def dashboard_payload(graph_path: str | Path) -> dict[str, Any]:
         "retrieval_modes": [mode.value for mode in RetrievalMode],
         "answer_llms": list(SUPPORTED_ANSWER_BACKENDS),
         "pipeline_llms": list(SUPPORTED_LLM_BACKENDS),
+        "embedding_providers": ["demo", "auto", "ollama", "openai"],
     }
 
 
@@ -451,6 +462,7 @@ def ask_payload(
     retrieval_mode: str,
     top_k: int,
     llm: str = "gemma",
+    embedding_provider: str = "demo",
 ) -> dict[str, Any]:
     """Answer a question using graph retrieval and optional local Gemma."""
     if not query.strip():
@@ -462,7 +474,7 @@ def ask_payload(
     retrieval_started = time.perf_counter()
     retrieved = HybridRetriever(
         kg,
-        _web_embedding_provider(),
+        _web_embedding_provider(embedding_provider),
         mode=mode,
     ).retrieve(query, top_k=safe_top_k)
     retrieval_elapsed = time.perf_counter() - retrieval_started
@@ -503,6 +515,7 @@ def ask_payload(
             "retrieval_mode": mode.value,
             "top_k": safe_top_k,
             "llm": llm,
+            "embedding_provider": embedding_provider,
             "retrieved_count": len(retrieved),
             "graph_context_chars": len(graph_context),
             "retrieval_s": retrieval_elapsed,
@@ -517,6 +530,7 @@ def retrieval_compare_payload(
     graph_path: str | Path,
     query: str,
     top_k: int,
+    embedding_provider: str = "demo",
 ) -> dict[str, Any]:
     """Compare retrieval results across all available modes."""
     if not query.strip():
@@ -529,7 +543,7 @@ def retrieval_compare_payload(
         started = time.perf_counter()
         retrieved = HybridRetriever(
             kg,
-            _web_embedding_provider(),
+            _web_embedding_provider(embedding_provider),
             mode=mode,
         ).retrieve(query, top_k=safe_top_k)
         modes[mode.value] = {
@@ -595,12 +609,14 @@ def evaluation_summary_payload() -> dict[str, Any]:
     """Load saved evaluation artifacts for the Web UI quality panel."""
     results_dir = _project_root() / "results"
     retrieval_metrics = _read_json_artifact(results_dir / "retrieval_metrics.json")
+    baseline_metrics = _read_json_artifact(results_dir / "baseline_metrics.json")
     generation_metrics = _read_json_artifact(results_dir / "generation_metrics.json")
     latency_metrics = _read_json_artifact(results_dir / "latency_results.json")
     full_report = _read_json_artifact(results_dir / "full_evaluation_report.json")
     return {
         "results_dir": str(results_dir),
         "retrieval_metrics": retrieval_metrics,
+        "baseline_metrics": baseline_metrics,
         "generation_metrics": generation_metrics,
         "latency_metrics": latency_metrics,
         "full_report": full_report,
@@ -608,6 +624,7 @@ def evaluation_summary_payload() -> dict[str, Any]:
             item is not None
             for item in [
                 retrieval_metrics,
+                baseline_metrics,
                 generation_metrics,
                 latency_metrics,
                 full_report,
@@ -825,7 +842,7 @@ def _run_pipeline_with_progress(
     kg.save(output_path)
     retrieved = HybridRetriever(
         kg,
-        _web_embedding_provider(),
+        _web_embedding_provider("demo"),
         mode=RetrievalMode.HYBRID_RRF,
     ).retrieve("How is Ph+ ALL managed differently?", top_k=5)
     summary_path = output_path.with_name("run_summary.json")
@@ -920,10 +937,8 @@ def _build_chat_client(llm: str) -> LLMClient:
     return build_llm_client(llm)
 
 
-def _web_embedding_provider() -> Any:
-    from hirag_ontology.pipeline.runner import demo_embedding_provider
-
-    return demo_embedding_provider()
+def _web_embedding_provider(kind: str = "demo") -> Any:
+    return build_embedding_provider(kind)
 
 
 def _build_subgraph_payload(

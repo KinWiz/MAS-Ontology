@@ -69,6 +69,15 @@
                     <option value="deterministic">Deterministic</option>
                   </select>
                 </label>
+                <label>
+                  Embeddings
+                  <select id="embeddingMode">
+                    <option value="demo">demo</option>
+                    <option value="auto">auto</option>
+                    <option value="ollama">ollama</option>
+                    <option value="openai">openai</option>
+                  </select>
+                </label>
                 <button id="compareModesButton" type="button" class="secondary">
                   Сравнить режимы
                 </button>
@@ -211,8 +220,26 @@
                 Limit nodes
                 <input id="limitNodesInput" type="number" min="10" max="200" value="60" />
               </label>
+              <label>
+                Layout
+                <select id="layoutMode">
+                  <option value="type_cluster">Type clusters</option>
+                  <option value="neighborhood">Neighborhood</option>
+                </select>
+              </label>
+              <label>
+                Relations
+                <select id="relationView">
+                  <option value="important">Important</option>
+                  <option value="all">All</option>
+                </select>
+              </label>
               <label class="inline-check">
-                <input id="edgeLabelsToggle" type="checkbox" checked />
+                <input id="focusModeToggle" type="checkbox" checked />
+                Focus mode
+              </label>
+              <label class="inline-check">
+                <input id="edgeLabelsToggle" type="checkbox" />
                 Edge labels
               </label>
               <div id="entitySearchResults" class="entity-list"></div>
@@ -226,6 +253,7 @@
                 <button id="graphZoomOut" type="button" class="secondary">-</button>
                 <button id="graphResetView" type="button" class="secondary">Сброс</button>
               </div>
+              <div id="graphLegend" class="graph-legend"></div>
               <svg id="graphSvg" role="img" aria-label="Knowledge graph"></svg>
             </div>
             <aside id="entityPanel" class="entity-panel">

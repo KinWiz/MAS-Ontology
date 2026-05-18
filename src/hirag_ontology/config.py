@@ -76,6 +76,27 @@ class Neo4jSettings:
         )
 
 
+@dataclass(frozen=True)
+class EmbeddingSettings:
+    """Optional runtime settings for real embedding providers."""
+
+    provider: str
+    model: str
+    base_url: str
+    api_key: str
+    request_timeout_seconds: float
+
+    def __repr__(self) -> str:
+        return (
+            "EmbeddingSettings("
+            f"provider={self.provider!r}, "
+            f"model={self.model!r}, "
+            f"base_url={self.base_url!r}, "
+            f"api_key={'<set>' if self.api_key else '<empty>'}, "
+            f"request_timeout_seconds={self.request_timeout_seconds!r})"
+        )
+
+
 def load_dotenv(path: str | Path = ".env", *, override: bool = False) -> None:
     """Load simple KEY=VALUE pairs from a .env file into os.environ."""
     env_path = Path(path)
@@ -147,6 +168,37 @@ def load_neo4j_settings(env_path: str | Path = ".env") -> Neo4jSettings:
         user=os.getenv("NEO4J_USER", "neo4j").strip(),
         password=os.getenv("NEO4J_PASSWORD", "").strip(),
         database=database or None,
+    )
+
+
+def load_embedding_settings(env_path: str | Path = ".env") -> EmbeddingSettings:
+    """Load optional real embedding settings from .env and environment."""
+    load_dotenv(env_path)
+    provider = os.getenv("EMBEDDING_PROVIDER", "demo").strip().casefold() or "demo"
+    default_model = (
+        "mxbai-embed-large"
+        if provider == "ollama"
+        else "text-embedding-3-small"
+        if provider == "openai"
+        else "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+    )
+    default_base_url = (
+        "http://localhost:11434"
+        if provider == "ollama"
+        else os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+    )
+    return EmbeddingSettings(
+        provider=provider,
+        model=os.getenv("EMBEDDING_MODEL", default_model).strip() or default_model,
+        base_url=os.getenv("EMBEDDING_BASE_URL", default_base_url).strip().rstrip("/"),
+        api_key=os.getenv(
+            "EMBEDDING_API_KEY",
+            os.getenv("OPENAI_API_KEY", ""),
+        ).strip(),
+        request_timeout_seconds=_get_float_env(
+            "EMBEDDING_REQUEST_TIMEOUT_SECONDS",
+            default=120.0,
+        ),
     )
 
 

@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import math
 import re
 from collections import Counter
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Protocol
+from urllib.error import HTTPError
+from urllib.request import Request, urlopen
 
+from hirag_ontology.config import load_embedding_settings
 from hirag_ontology.pipeline.knowledge_graph import Entity, KnowledgeGraph
 from hirag_ontology.retrieval.rrf import rrf_fusion
 
@@ -69,6 +73,188 @@ class FakeEmbeddingProvider:
             (digest[index] / 255.0)
             for index in range(self.dimensions)
         ]
+
+
+class OpenAIEmbeddingProvider:
+    """OpenAI-compatible multilingual embedding provider."""
+
+    def __init__(
+        self,
+        *,
+        model: str,
+        base_url: str = "https://api.openai.com/v1",
+        api_key: str = "",
+        request_timeout_seconds: float = 120.0,
+    ) -> None:
+        if not api_key:
+            msg = (
+                "EMBEDDING_API_KEY or OPENAI_API_KEY is required for "
+                "openai embeddings."
+            )
+            raise ValueError(msg)
+        self.model = model
+        self.base_url = base_url.rstrip("/")
+        self.api_key = api_key
+        self.request_timeout_seconds = request_timeout_seconds
+
+    def encode(
+        self,
+        texts: list[str],
+        *,
+        normalize: bool = True,
+    ) -> list[list[float]]:
+        """Encode text through an OpenAI-compatible /embeddings endpoint."""
+        if not texts:
+            return []
+        payload = self._post_json(
+            f"{self.base_url}/embeddings",
+            {
+                "model": self.model,
+                "input": texts,
+            },
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+            },
+        )
+        data = payload.get("data")
+        if not isinstance(data, list) or not all(
+            isinstance(item, dict) for item in data
+        ):
+            msg = "Embedding response must contain a data list."
+            raise RuntimeError(msg)
+        ordered = sorted(data, key=lambda item: int(item.get("index", 0)))
+        vectors = [_embedding_from_payload(item) for item in ordered]
+        if len(vectors) != len(texts):
+            msg = "Embedding response length does not match input length."
+            raise RuntimeError(msg)
+        if normalize:
+            return [_normalize_vector(vector) for vector in vectors]
+        return vectors
+
+    def _post_json(
+        self,
+        url: str,
+        payload: dict[str, object],
+        *,
+        headers: dict[str, str] | None = None,
+    ) -> dict[str, object]:
+        request = Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Content-Type": "application/json",
+                **(headers or {}),
+            },
+            method="POST",
+        )
+        try:
+            with urlopen(  # noqa: S310 - user-configured local/OpenAI endpoint.
+                request,
+                timeout=self.request_timeout_seconds,
+            ) as response:
+                decoded = json.loads(response.read().decode("utf-8"))
+        except HTTPError as error:
+            msg = f"Embedding request failed with HTTP {error.code}."
+            raise RuntimeError(msg) from error
+        except (OSError, json.JSONDecodeError) as error:
+            msg = "Embedding request failed."
+            raise RuntimeError(msg) from error
+        if not isinstance(decoded, dict):
+            msg = "Embedding response must be a JSON object."
+            raise RuntimeError(msg)
+        return decoded
+
+
+class OllamaEmbeddingProvider:
+    """Local Ollama embedding provider."""
+
+    def __init__(
+        self,
+        *,
+        model: str = "mxbai-embed-large",
+        base_url: str = "http://localhost:11434",
+        request_timeout_seconds: float = 120.0,
+    ) -> None:
+        self.model = model
+        self.base_url = base_url.rstrip("/")
+        self.request_timeout_seconds = request_timeout_seconds
+
+    def encode(
+        self,
+        texts: list[str],
+        *,
+        normalize: bool = True,
+    ) -> list[list[float]]:
+        """Encode texts through Ollama's local embedding API."""
+        vectors = [self._encode_one(text) for text in texts]
+        if normalize:
+            return [_normalize_vector(vector) for vector in vectors]
+        return vectors
+
+    def _encode_one(self, text: str) -> list[float]:
+        payload = self._post_json(
+            f"{self.base_url}/api/embeddings",
+            {
+                "model": self.model,
+                "prompt": text,
+            },
+        )
+        return _embedding_from_payload(payload)
+
+    def _post_json(self, url: str, payload: dict[str, object]) -> dict[str, object]:
+        request = Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urlopen(  # noqa: S310 - expected local Ollama endpoint.
+                request,
+                timeout=self.request_timeout_seconds,
+            ) as response:
+                decoded = json.loads(response.read().decode("utf-8"))
+        except HTTPError as error:
+            msg = f"Ollama embedding request failed with HTTP {error.code}."
+            raise RuntimeError(msg) from error
+        except (OSError, json.JSONDecodeError) as error:
+            msg = "Ollama embedding request failed."
+            raise RuntimeError(msg) from error
+        if not isinstance(decoded, dict):
+            msg = "Ollama embedding response must be a JSON object."
+            raise RuntimeError(msg)
+        return decoded
+
+
+def build_embedding_provider(kind: str = "demo") -> EmbeddingProvider:
+    """Build an embedding provider without making network calls up front."""
+    normalized_kind = kind.casefold().strip() or "demo"
+    if normalized_kind == "demo":
+        from hirag_ontology.pipeline.runner import demo_embedding_provider
+
+        return demo_embedding_provider()
+
+    settings = load_embedding_settings()
+    provider = settings.provider if normalized_kind == "auto" else normalized_kind
+    if provider == "demo":
+        from hirag_ontology.pipeline.runner import demo_embedding_provider
+
+        return demo_embedding_provider()
+    if provider == "openai":
+        return OpenAIEmbeddingProvider(
+            model=settings.model,
+            base_url=settings.base_url,
+            api_key=settings.api_key,
+            request_timeout_seconds=settings.request_timeout_seconds,
+        )
+    if provider == "ollama":
+        return OllamaEmbeddingProvider(
+            model=settings.model,
+            base_url=settings.base_url,
+            request_timeout_seconds=settings.request_timeout_seconds,
+        )
+    msg = "embedding provider must be one of: demo, auto, openai, ollama."
+    raise ValueError(msg)
 
 
 class RetrievalMode(StrEnum):
@@ -371,6 +557,23 @@ def cosine_similarity(left: list[float], right: list[float]) -> float:
         for left_value, right_value in zip(left, right, strict=True)
     )
     return dot_product / (left_norm * right_norm)
+
+
+def _embedding_from_payload(payload: object) -> list[float]:
+    if not isinstance(payload, dict):
+        msg = "Embedding payload must be a JSON object."
+        raise RuntimeError(msg)
+    raw_embedding = payload.get("embedding")
+    if not isinstance(raw_embedding, list):
+        msg = "Embedding payload must contain an embedding list."
+        raise RuntimeError(msg)
+    vector: list[float] = []
+    for value in raw_embedding:
+        if not isinstance(value, int | float):
+            msg = "Embedding vector must contain only numbers."
+            raise RuntimeError(msg)
+        vector.append(float(value))
+    return vector
 
 
 def _normalize_vector(vector: list[float]) -> list[float]:

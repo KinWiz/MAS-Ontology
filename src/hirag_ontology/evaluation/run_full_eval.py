@@ -8,6 +8,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from hirag_ontology.evaluation.baseline_eval import (
+    print_baseline_summary,
+    run_baseline_eval,
+    save_baseline_eval,
+)
 from hirag_ontology.evaluation.dedup_ablation import (
     print_dedup_summary,
     run_dedup_ablation,
@@ -31,7 +36,7 @@ from hirag_ontology.evaluation.retrieval_eval import (
     save_retrieval_eval,
 )
 from hirag_ontology.llm import LLMClient
-from hirag_ontology.retrieval.retriever import RetrievalMode
+from hirag_ontology.retrieval.retriever import EmbeddingProvider, RetrievalMode
 
 MARKDOWN_REPORT_NAME = "evaluation_report.md"
 
@@ -47,8 +52,10 @@ def run_full_evaluation(
     answer_mode: str = "deterministic",
     llm_client: LLMClient | None = None,
     judge_client: LLMClient | None = None,
+    embedding_provider: EmbeddingProvider | None = None,
     skip_generation: bool = False,
     skip_dedup: bool = False,
+    skip_baselines: bool = False,
     apply_dedup_ablation: bool = False,
 ) -> dict[str, Any]:
     """Run retrieval, generation, latency, and dedup ablation evaluations."""
@@ -67,9 +74,20 @@ def run_full_evaluation(
         kg_path=kg_path,
         gt_path=gt_path,
         top_k=top_k,
+        embedding_provider=embedding_provider,
     )
     save_retrieval_eval(retrieval, output_dir)
     report["components"]["retrieval"] = retrieval["per_mode"]
+
+    if not skip_baselines:
+        baselines = run_baseline_eval(
+            kg_path=kg_path,
+            gt_path=gt_path,
+            top_k=top_k,
+            embedding_provider=embedding_provider,
+        )
+        save_baseline_eval(baselines, output_dir)
+        report["components"]["baselines"] = baselines["per_system"]
 
     if not skip_generation:
         generation = run_generation_eval(
@@ -80,6 +98,7 @@ def run_full_evaluation(
             answer_mode=answer_mode,
             llm_client=llm_client,
             judge_client=judge_client,
+            embedding_provider=embedding_provider,
             n_questions=n_generation,
         )
         save_generation_eval(generation, output_dir)
@@ -92,6 +111,7 @@ def run_full_evaluation(
         top_k=top_k,
         answer_mode=answer_mode,
         llm_client=llm_client,
+        embedding_provider=embedding_provider,
     )
     save_latency_eval(latency, output_dir)
     report["components"]["latency"] = latency["aggregated"]
@@ -148,6 +168,30 @@ def save_markdown_report(report: dict[str, Any], out_dir: str | Path) -> Path:
             lines.append(
                 "| "
                 f"{mode} | "
+                f"{_fmt(metrics.get('Hit@5'))} | "
+                f"{_fmt(metrics.get('Hit@10'))} | "
+                f"{_fmt(metrics.get('MRR'))} | "
+                f"{_fmt(metrics.get('MAP@10'))} | "
+                f"{metrics.get('n_questions', '')} |"
+            )
+        lines.append("")
+
+    baselines = components.get("baselines")
+    if isinstance(baselines, dict):
+        lines.extend(
+            [
+                "## Baselines",
+                "",
+                "| system | Hit@5 | Hit@10 | MRR | MAP@10 | n |",
+                "| --- | ---: | ---: | ---: | ---: | ---: |",
+            ]
+        )
+        for system, metrics in baselines.items():
+            if not isinstance(metrics, dict):
+                continue
+            lines.append(
+                "| "
+                f"{system} | "
                 f"{_fmt(metrics.get('Hit@5'))} | "
                 f"{_fmt(metrics.get('Hit@10'))} | "
                 f"{_fmt(metrics.get('MRR'))} | "
@@ -236,6 +280,8 @@ def print_full_report(report: dict[str, Any]) -> None:
     components = report["components"]
     if "retrieval" in components:
         print_retrieval_summary({"per_mode": components["retrieval"]})
+    if "baselines" in components:
+        print_baseline_summary({"per_system": components["baselines"]})
     if "generation" in components:
         print_generation_summary({"summary": components["generation"]})
     if "latency" in components:
@@ -265,6 +311,7 @@ def main() -> None:
     parser.add_argument("--n-generation", type=int, default=None)
     parser.add_argument("--skip-generation", action="store_true")
     parser.add_argument("--skip-dedup", action="store_true")
+    parser.add_argument("--skip-baselines", action="store_true")
     parser.add_argument("--apply-dedup-ablation", action="store_true")
     args = parser.parse_args()
 
@@ -277,6 +324,7 @@ def main() -> None:
         n_generation=args.n_generation,
         skip_generation=args.skip_generation,
         skip_dedup=args.skip_dedup,
+        skip_baselines=args.skip_baselines,
         apply_dedup_ablation=args.apply_dedup_ablation,
     )
     print_full_report(report)

@@ -53,6 +53,7 @@ def test_web_dashboard_payload_contains_counts_and_validation(tmp_path) -> None:
     assert payload["top_by_pagerank"]
     assert "openai" in payload["answer_llms"]
     assert "deepseek" in payload["pipeline_llms"]
+    assert "ollama" in payload["embedding_providers"]
 
 
 def test_web_entity_search_filters_by_type(tmp_path) -> None:
@@ -98,6 +99,7 @@ def test_web_ask_payload_uses_deterministic_mode_without_llm(tmp_path) -> None:
     assert "Ph+ acute lymphoblastic leukemia" in payload["answer"]
     assert payload["retrieved_entities"]
     assert payload["diagnostics"]["retrieval_mode"] == "lexical_only"
+    assert payload["diagnostics"]["embedding_provider"] == "demo"
     assert payload["context_relations"]
     assert "Graph Context" not in payload["graph_context"]
 

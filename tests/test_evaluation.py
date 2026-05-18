@@ -1,5 +1,6 @@
 import json
 
+from hirag_ontology.evaluation.baseline_eval import run_baseline_eval
 from hirag_ontology.evaluation.benchmark import load_benchmark
 from hirag_ontology.evaluation.dedup_ablation import LabeledPair, run_dedup_ablation
 from hirag_ontology.evaluation.generation_eval import (
@@ -111,6 +112,20 @@ def test_run_retrieval_eval_returns_mode_metrics(tmp_path) -> None:
     assert results["per_question"][0]["modes"]["lexical_only"]["top_retrieved"]
 
 
+def test_run_baseline_eval_compares_expected_systems(tmp_path) -> None:
+    _, graph_path, gt_path, _ = _evaluation_fixture(tmp_path)
+
+    results = run_baseline_eval(
+        kg_path=graph_path,
+        gt_path=gt_path,
+        top_k=3,
+        embedding_provider=FakeEmbeddingProvider(),
+    )
+
+    assert set(results["per_system"]) == {"naive_rag", "hirag", "hirag_ontology"}
+    assert results["systems"]["naive_rag"]["retrieval_mode"] == "lexical_only"
+
+
 def test_generation_eval_uses_deterministic_metrics(tmp_path) -> None:
     kg, graph_path, gt_path, ids = _evaluation_fixture(tmp_path)
 
@@ -175,7 +190,9 @@ def test_full_evaluation_writes_artifacts(tmp_path) -> None:
     assert (out_dir / "full_evaluation_report.json").exists()
     assert (out_dir / "evaluation_report.md").exists()
     assert (out_dir / "retrieval_metrics.json").exists()
+    assert (out_dir / "baseline_metrics.json").exists()
     assert report["components"]["retrieval"]
+    assert report["components"]["baselines"]
 
 
 def test_benchmark_loader_and_judge_json_parse(tmp_path) -> None:

@@ -27,7 +27,11 @@ from hirag_ontology.retrieval.answering import (
     build_graph_context,
     deterministic_answer_from_graph_context,
 )
-from hirag_ontology.retrieval.retriever import HybridRetriever, RetrievalMode
+from hirag_ontology.retrieval.retriever import (
+    EmbeddingProvider,
+    HybridRetriever,
+    RetrievalMode,
+)
 
 
 def run_generation_eval(
@@ -39,6 +43,7 @@ def run_generation_eval(
     answer_mode: str = "deterministic",
     llm_client: LLMClient | None = None,
     judge_client: LLMClient | None = None,
+    embedding_provider: EmbeddingProvider | None = None,
     n_questions: int | None = None,
 ) -> dict[str, Any]:
     """Evaluate generated answers on faithfulness, relevance, and context quality."""
@@ -50,7 +55,7 @@ def run_generation_eval(
 
     retriever = HybridRetriever(
         kg,
-        demo_embedding_provider(),
+        embedding_provider or demo_embedding_provider(),
         mode=retrieval_mode,
     )
     per_question: list[dict[str, Any]] = []
