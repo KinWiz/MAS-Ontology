@@ -1,0 +1,23 @@
+{
+  "naive_rag": {
+    "Hit@5": 0.6,
+    "Hit@10": 0.64,
+    "MRR": 0.5667,
+    "MAP@10": 0.2658,
+    "n_questions": 50
+  },
+  "hirag": {
+    "Hit@5": 0.54,
+    "Hit@10": 0.68,
+    "MRR": 0.4352,
+    "MAP@10": 0.1806,
+    "n_questions": 50
+  },
+  "hirag_ontology": {
+    "Hit@5": 0.64,
+    "Hit@10": 0.64,
+    "MRR": 0.538,
+    "MAP@10": 0.2615,
+    "n_questions": 50
+  }
+}

@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 from collections.abc import Sequence
+from pathlib import Path
 
 from hirag_ontology import __version__
 from hirag_ontology.app.web_demo import run_server
 from hirag_ontology.config import load_neo4j_settings
 from hirag_ontology.evaluation.run_full_eval import run_full_evaluation
 from hirag_ontology.llm import SUPPORTED_LLM_BACKENDS, LLMClient, build_llm_client
+from hirag_ontology.ontology import load_ontology
+from hirag_ontology.pipeline.graph_repair import GraphRepairOptions, repair_graph
 from hirag_ontology.pipeline.knowledge_graph import KnowledgeGraph
 from hirag_ontology.pipeline.runner import run_demo_pipeline
 from hirag_ontology.retrieval.answering import (
@@ -110,8 +114,38 @@ def build_parser() -> argparse.ArgumentParser:
     )
     graph_stats.add_argument(
         "--graph",
-        default="results/knowledge_graph_full_gemma.json",
+        default="results/knowledge_graph_repaired.json",
         help="Path to a saved knowledge graph JSON.",
+    )
+
+    repair_graph_parser = subparsers.add_parser(
+        "repair-graph",
+        help="Repair a saved JSON graph against ontology constraints.",
+    )
+    repair_graph_parser.add_argument(
+        "--graph",
+        default="results/knowledge_graph_full_gemma.json",
+        help="Path to the source graph JSON.",
+    )
+    repair_graph_parser.add_argument(
+        "--out",
+        default="results/knowledge_graph_repaired.json",
+        help="Path where the repaired graph JSON will be written.",
+    )
+    repair_graph_parser.add_argument(
+        "--report",
+        default=None,
+        help="Path where the repair report JSON will be written.",
+    )
+    repair_graph_parser.add_argument(
+        "--infer-types",
+        action="store_true",
+        help="Infer specific types for entities currently typed as Other.",
+    )
+    repair_graph_parser.add_argument(
+        "--keep-duplicates",
+        action="store_true",
+        help="Keep exact duplicate relations after repair.",
     )
 
     export_neo4j = subparsers.add_parser(
@@ -120,7 +154,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     export_neo4j.add_argument(
         "--graph",
-        default="results/knowledge_graph_full_gemma.json",
+        default="results/knowledge_graph_repaired.json",
         help="Path to a saved knowledge graph JSON.",
     )
     export_neo4j.add_argument(
@@ -166,7 +200,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     web.add_argument(
         "--graph",
-        default="results/knowledge_graph_full_gemma.json",
+        default="results/knowledge_graph_repaired.json",
         help="Default graph JSON opened by the Web UI.",
     )
 
@@ -176,7 +210,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     evaluate.add_argument(
         "--kg",
-        default="results/knowledge_graph_full_gemma.json",
+        default="results/knowledge_graph_repaired.json",
         help="Path to a saved knowledge graph JSON.",
     )
     evaluate.add_argument(
@@ -309,6 +343,56 @@ def run_graph_stats(args: argparse.Namespace) -> int:
     return 0
 
 
+def run_repair_graph(args: argparse.Namespace) -> int:
+    """Repair a JSON graph against ontology constraints."""
+    try:
+        kg = KnowledgeGraph.load(args.graph)
+        report = repair_graph(
+            kg,
+            ontology=load_ontology(),
+            options=GraphRepairOptions(
+                infer_other_types=args.infer_types,
+                deduplicate_relations=not args.keep_duplicates,
+            ),
+        )
+        output_path = Path(args.out)
+        kg.save(output_path)
+        report_path = (
+            Path(args.report)
+            if args.report is not None
+            else output_path.with_suffix(".repair_report.json")
+        )
+        report["input_graph"] = str(args.graph)
+        report["output_graph"] = str(output_path)
+        report["report_path"] = str(report_path)
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        report_path.write_text(
+            json.dumps(report, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except (FileNotFoundError, RuntimeError, ValueError) as error:
+        print(f"error: {error}")
+        return 2
+
+    before = report["validation_before"]
+    after = report["validation_after"]
+    print(f"Repaired graph saved: {output_path}")
+    print(f"Repair report saved: {report_path}")
+    print(
+        "Violations: "
+        f"{before['violation_count']} -> {after['violation_count']}"
+    )
+    print(
+        "Consistency: "
+        f"{before['consistency_score']:.4f} -> {after['consistency_score']:.4f}"
+    )
+    print(
+        "Relations: "
+        f"{report['relation_count_before']} -> {report['relation_count_after']}"
+    )
+    return 0
+
+
 def run_export_neo4j(args: argparse.Namespace) -> int:
     """Export a JSON graph into an optional Neo4j backend."""
     logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s:%(message)s")
@@ -399,6 +483,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return run_ask(args)
     if args.command == "graph-stats":
         return run_graph_stats(args)
+    if args.command == "repair-graph":
+        return run_repair_graph(args)
     if args.command == "export-neo4j":
         return run_export_neo4j(args)
     if args.command == "web":

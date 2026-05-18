@@ -67,12 +67,25 @@ def test_parser_exposes_neo4j_export_defaults() -> None:
     args = parser.parse_args(["export-neo4j"])
 
     assert args.command == "export-neo4j"
-    assert args.graph == "results/knowledge_graph_full_gemma.json"
+    assert args.graph == "results/knowledge_graph_repaired.json"
     assert args.uri is None
     assert args.user is None
     assert args.password is None
     assert args.database is None
     assert args.clear is False
+
+
+def test_parser_exposes_repair_graph_defaults() -> None:
+    parser = build_parser()
+
+    args = parser.parse_args(["repair-graph"])
+
+    assert args.command == "repair-graph"
+    assert args.graph == "results/knowledge_graph_full_gemma.json"
+    assert args.out == "results/knowledge_graph_repaired.json"
+    assert args.report is None
+    assert args.infer_types is False
+    assert args.keep_duplicates is False
 
 
 def test_parser_exposes_web_defaults() -> None:
@@ -83,7 +96,7 @@ def test_parser_exposes_web_defaults() -> None:
     assert args.command == "web"
     assert args.host == "127.0.0.1"
     assert args.port == 8765
-    assert args.graph == "results/knowledge_graph_full_gemma.json"
+    assert args.graph == "results/knowledge_graph_repaired.json"
 
 
 def test_parser_exposes_evaluate_defaults() -> None:
@@ -92,7 +105,7 @@ def test_parser_exposes_evaluate_defaults() -> None:
     args = parser.parse_args(["evaluate"])
 
     assert args.command == "evaluate"
-    assert args.kg == "results/knowledge_graph_full_gemma.json"
+    assert args.kg == "results/knowledge_graph_repaired.json"
     assert args.gt == "evaluation/ground_truth.json"
     assert args.out_dir == "results"
     assert args.top_k == 10
@@ -116,6 +129,43 @@ def test_graph_stats_command_prints_json_graph_stats(tmp_path, capsys) -> None:
     captured = capsys.readouterr()
     assert exit_code == 0
     assert "2 entities, 1 relations" in captured.out
+
+
+def test_repair_graph_command_writes_repaired_graph_and_report(
+    tmp_path,
+    capsys,
+) -> None:
+    graph_path = tmp_path / "graph.json"
+    output_path = tmp_path / "graph_repaired.json"
+    report_path = tmp_path / "repair_report.json"
+    kg = KnowledgeGraph()
+    condition_id = kg.add_entity(
+        Entity(label="Ph-positive ALL", entity_type="Condition")
+    )
+    lab_id = kg.add_entity(Entity(label="FISH", entity_type="LabTest"))
+    kg.add_relation_by_ids(lab_id, "diagnosed_by", condition_id)
+    kg.save(graph_path)
+
+    exit_code = main(
+        [
+            "repair-graph",
+            "--graph",
+            str(graph_path),
+            "--out",
+            str(output_path),
+            "--report",
+            str(report_path),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert output_path.exists()
+    assert report_path.exists()
+    assert "Violations:" in captured.out
+    repaired = KnowledgeGraph.load(output_path)
+    assert repaired.relations[0].subject_id == condition_id
+    assert repaired.relations[0].object_id == lab_id
 
 
 def test_export_neo4j_uses_optional_store_without_logging_password(

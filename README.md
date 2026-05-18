@@ -83,7 +83,7 @@ Ask a question against a saved graph with:
 
 ```bash
 uv run python -m hirag_ontology.cli ask \
-  --graph results/knowledge_graph_full_gemma.json \
+  --graph results/knowledge_graph_repaired.json \
   --query "How is Ph+ ALL treated?" \
   --llm gemma \
   --retrieval-mode lexical_structural \
@@ -99,11 +99,22 @@ The repository includes a prebuilt full graph converted from
 results/knowledge_graph_full_gemma.json
 ```
 
+It also includes a validation-repaired graph used by the Web UI by default:
+
+```text
+results/knowledge_graph_repaired.json
+results/knowledge_graph_repaired.repair_report.json
+```
+
+The repaired graph preserves the same entities, reverses ontology-compatible
+backward relations, relaxes unresolved domain/range conflicts to `related_to`,
+deduplicates exact duplicate relations, and reaches zero ontology violations.
+
 Use it to test question answering without rebuilding the graph:
 
 ```bash
 uv run python -m hirag_ontology.cli ask \
-  --graph results/knowledge_graph_full_gemma.json \
+  --graph results/knowledge_graph_repaired.json \
   --query "Как лечить Острый лимфобластный лейкоз (ОЛЛ)?" \
   --llm gemma \
   --retrieval-mode lexical_structural \
@@ -119,7 +130,15 @@ Print graph statistics with:
 
 ```bash
 uv run python -m hirag_ontology.cli graph-stats \
-  --graph results/knowledge_graph_full_gemma.json
+  --graph results/knowledge_graph_repaired.json
+```
+
+Repair a graph again with:
+
+```bash
+uv run python -m hirag_ontology.cli repair-graph \
+  --graph results/knowledge_graph_full_gemma.json \
+  --out results/knowledge_graph_repaired.json
 ```
 
 ## Optional Neo4j Export
@@ -144,7 +163,7 @@ Export the prebuilt graph:
 
 ```bash
 uv run python -m hirag_ontology.cli export-neo4j \
-  --graph results/knowledge_graph_full_gemma.json \
+  --graph results/knowledge_graph_repaired.json \
   --clear
 ```
 
@@ -179,7 +198,7 @@ The UI includes:
 By default, the UI opens:
 
 ```text
-results/knowledge_graph_full_gemma.json
+results/knowledge_graph_repaired.json
 ```
 
 To choose another graph at startup:
@@ -264,12 +283,12 @@ Use a backend from the CLI:
 
 ```bash
 uv run python -m hirag_ontology.cli ask \
-  --graph results/knowledge_graph_full_gemma.json \
+  --graph results/knowledge_graph_repaired.json \
   --query "Какой протокол используется при ОПЛ?" \
   --llm openai
 
 uv run python -m hirag_ontology.cli ask \
-  --graph results/knowledge_graph_full_gemma.json \
+  --graph results/knowledge_graph_repaired.json \
   --query "Какой протокол используется при ОПЛ?" \
   --llm deepseek
 ```
@@ -314,7 +333,7 @@ Run the full deterministic evaluation suite against the bundled graph:
 
 ```bash
 uv run python -m hirag_ontology.cli evaluate \
-  --kg results/knowledge_graph_full_gemma.json \
+  --kg results/knowledge_graph_repaired.json \
   --gt evaluation/ground_truth.json \
   --out-dir results
 ```
@@ -343,22 +362,22 @@ You can run individual evaluation modules too:
 
 ```bash
 uv run python -m hirag_ontology.evaluation.retrieval_eval \
-  --kg results/knowledge_graph_full_gemma.json \
+  --kg results/knowledge_graph_repaired.json \
   --gt evaluation/ground_truth.json \
   --top-k 10
 
 uv run python -m hirag_ontology.evaluation.generation_eval \
-  --kg results/knowledge_graph_full_gemma.json \
+  --kg results/knowledge_graph_repaired.json \
   --gt evaluation/ground_truth.json \
   --mode lexical_structural
 
 uv run python -m hirag_ontology.evaluation.latency_eval \
-  --kg results/knowledge_graph_full_gemma.json \
+  --kg results/knowledge_graph_repaired.json \
   --gt evaluation/ground_truth.json \
   --n-queries 20
 
 uv run python -m hirag_ontology.evaluation.dedup_ablation \
-  --kg results/knowledge_graph_full_gemma.json
+  --kg results/knowledge_graph_repaired.json
 ```
 
 The included ground truth is a 50-question benchmark whose

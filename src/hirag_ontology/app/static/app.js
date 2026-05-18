@@ -1,5 +1,5 @@
 const state = {
-  graphPath: "results/knowledge_graph_full_gemma.json",
+  graphPath: "results/knowledge_graph_repaired.json",
   dashboard: null,
   selectedEntityId: null,
   focusEntityId: null,
@@ -213,7 +213,7 @@ function localizeDoctorControls() {
   );
   setButtonCopy(
     ".main-tab[data-view='ask']",
-    "Вопрос врачу",
+    "Задать вопрос",
     "Задать клинический вопрос по графу знаний",
   );
   setButtonCopy(

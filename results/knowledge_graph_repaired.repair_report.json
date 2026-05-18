@@ -1,0 +1,72 @@
+{
+  "validation_before": {
+    "consistency_score": 0.8117267606989842,
+    "violation_count": 3911,
+    "counts": {
+      "valid_entity_type": 0,
+      "valid_predicate": 12,
+      "domain_constraint": 2203,
+      "range_constraint": 1696,
+      "no_self_loops": 0
+    },
+    "violation_types": {
+      "domain_violation": 2203,
+      "invalid_predicate": 12,
+      "range_violation": 1696
+    }
+  },
+  "validation_after": {
+    "consistency_score": 1.0,
+    "violation_count": 0,
+    "counts": {
+      "valid_entity_type": 0,
+      "valid_predicate": 0,
+      "domain_constraint": 0,
+      "range_constraint": 0,
+      "no_self_loops": 0
+    },
+    "violation_types": {}
+  },
+  "relation_count_before": 4245,
+  "relation_count_after": 3993,
+  "entity_count": 3793,
+  "actions": {
+    "deduplicated_relations": 252,
+    "domain_range_relaxed": 2055,
+    "inferred_entity_types": 0,
+    "invalid_predicate_relaxed": 12,
+    "kept": 1833,
+    "reversed": 345
+  },
+  "inferred_types": [],
+  "inferred_type_count": 0,
+  "predicate_distribution_before": {
+    "caused_by": 1,
+    "causes": 431,
+    "contraindicated_for": 85,
+    "diagnosed_by": 721,
+    "dosage_is": 266,
+    "enhances": 1,
+    "improves": 2,
+    "includes": 2,
+    "part_of": 806,
+    "prevents": 1,
+    "reduces": 3,
+    "related_to": 1060,
+    "requires": 1,
+    "treated_by": 1,
+    "treats": 864
+  },
+  "predicate_distribution_after": {
+    "causes": 31,
+    "contraindicated_for": 21,
+    "diagnosed_by": 372,
+    "dosage_is": 142,
+    "part_of": 121,
+    "related_to": 2972,
+    "treats": 334
+  },
+  "input_graph": "results\\knowledge_graph_full_gemma.json",
+  "output_graph": "results\\knowledge_graph_repaired.json",
+  "report_path": "results\\knowledge_graph_repaired.repair_report.json"
+}

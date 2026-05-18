@@ -730,7 +730,7 @@ def resolve_project_path(
     """Resolve user-provided paths against the project root."""
     if value is None or str(value).strip() == "":
         if default is None:
-            return _project_root() / "results" / "knowledge_graph_full_gemma.json"
+            return _project_root() / "results" / "knowledge_graph_repaired.json"
         raw_path = Path(default)
     else:
         raw_path = Path(str(value))

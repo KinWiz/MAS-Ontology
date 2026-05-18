@@ -14,8 +14,12 @@ src/results/
 results/*
 !results/.gitkeep
 !results/knowledge_graph_full_gemma.json
+!results/knowledge_graph_repaired.json
+!results/knowledge_graph_repaired.repair_report.json
 !results/retrieval_metrics.json
 !results/retrieval_metrics_per_question.json
+!results/baseline_metrics.json
+!results/baseline_metrics_per_question.json
 !results/generation_metrics.json
 !results/generation_metrics_per_question.json
 !results/latency_results.json
